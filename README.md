@@ -52,7 +52,7 @@ Both servers are intended to run on loopback. This preview is not a public multi
 ## Review workflow
 
 1. Select a local repository and committed base/head revisions.
-2. Paste requirements, decompose explicit lists, and edit each criterion.
+2. Paste requirements, decompose explicit lists, and edit each criterion. Wrapped lines and nested bullets stay with their parent criterion; Markdown task markers are removed. Review the resulting contract before analysis.
 3. Run offline retrieval or explicitly select the configured model verifier.
 4. Inspect criterion evidence, inference, uncertainty, and execution status separately.
 5. Save reviewer notes, revisit history, export results and notes as JSON, or copy a report preview.
