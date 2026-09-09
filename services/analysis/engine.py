@@ -92,6 +92,8 @@ def analyze_index(
         versions=versions,
         excluded=index["excluded"],
         duration_ms=int((time.perf_counter() - total_started) * 1000),
-        token_usage=None if getattr(verifier, "model", None) else 0,
+        token_usage=getattr(verifier, "token_usage", None)
+        if getattr(verifier, "model", None)
+        else 0,
         cost_usd=None if getattr(verifier, "model", None) else 0,
     )

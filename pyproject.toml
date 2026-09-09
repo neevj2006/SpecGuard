@@ -25,7 +25,12 @@ build-backend = "hatchling.build"
 packages = ["services"]
 
 [dependency-groups]
-dev = ["pytest>=8,<9", "ruff>=0.11,<1", "mypy>=1.15,<2"]
+dev = [
+    "pytest>=9.0.3,<10",
+    "ruff>=0.11,<1",
+    "mypy>=1.15,<2",
+    "pip-audit>=2.9,<3",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

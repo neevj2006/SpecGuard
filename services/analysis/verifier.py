@@ -8,6 +8,7 @@ import httpx
 from pydantic import Field
 
 from services.analysis.domain import Contract, Criterion, CriterionResult, Evidence, Verdict
+from services.analysis.privacy import contains_secret
 
 
 class Verifier(Protocol):
@@ -56,12 +57,27 @@ class ModelVerifier:
         self.key = os.environ.get("SPECGUARD_MODEL_KEY", "")
         if not self.model or not self.key:
             raise ValueError("Model mode needs SPECGUARD_MODEL and SPECGUARD_MODEL_KEY")
-        self.version = f"openai-compatible/{self.model}/prompt-1"
+        self.version = f"openai-compatible/{self.model}/prompt-1/privacy-1"
+        self.token_usage: int | None = 0
 
     def verify(self, criterion: Criterion, evidence: list[Evidence]) -> CriterionResult:
         fallback = BaselineVerifier().verify(criterion, evidence)
         if not evidence:
             return fallback
+        material = "\n".join(
+            [
+                criterion.text,
+                criterion.source_text,
+                *[e.quote for e in evidence],
+                *[e.path for e in evidence],
+            ]
+        )
+        if contains_secret(material, (self.key,)):
+            return fallback.model_copy(
+                update={
+                    "uncertainty": "Possible secret detected; this evidence packet was not sent to the provider. Review locally."
+                }
+            )
         packet = {
             "criterion": criterion.model_dump(),
             "evidence": [e.model_dump() for e in evidence],
@@ -70,8 +86,10 @@ class ModelVerifier:
             return fallback.model_copy(
                 update={"uncertainty": "Evidence exceeds model input budget."}
             )
+        usage_received = False
         try:
-            response = httpx.post(
+            with httpx.stream(
+                "POST",
                 "https://api.openai.com/v1/chat/completions",
                 headers={"Authorization": f"Bearer {self.key}"},
                 timeout=45,
@@ -87,11 +105,26 @@ class ModelVerifier:
                         {"role": "user", "content": json.dumps(packet)},
                     ],
                 },
-            )
-            response.raise_for_status()
-            claim = ModelClaim.model_validate_json(
-                response.json()["choices"][0]["message"]["content"]
-            )
+            ) as response:
+                response.raise_for_status()
+                content = bytearray()
+                for chunk in response.iter_bytes():
+                    content.extend(chunk)
+                    if len(content) > 100_000:
+                        raise ValueError("Model response exceeds output budget")
+                payload = json.loads(content)
+            usage = payload.get("usage", {}).get("total_tokens")
+            if (
+                isinstance(usage, int)
+                and not isinstance(usage, bool)
+                and usage >= 0
+                and self.token_usage is not None
+            ):
+                self.token_usage += usage
+            else:
+                self.token_usage = None
+            usage_received = True
+            claim = ModelClaim.model_validate_json(payload["choices"][0]["message"]["content"])
             by_id = {e.id: e for e in evidence}
             if any(identifier not in by_id for identifier in claim.evidence_ids):
                 raise ValueError("Unknown citation")
@@ -104,7 +137,9 @@ class ModelVerifier:
                 uncertainty=claim.uncertainty,
                 suggestion=claim.suggestion,
             )
-        except (httpx.HTTPError, ValueError, KeyError, IndexError):
+        except (httpx.HTTPError, ValueError, KeyError, IndexError, TypeError, AttributeError):
+            if not usage_received:
+                self.token_usage = None
             return fallback.model_copy(
                 update={"uncertainty": "Model response unavailable or failed evidence validation."}
             )

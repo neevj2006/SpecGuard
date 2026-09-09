@@ -1,4 +1,5 @@
 import json
+from contextlib import nullcontext
 
 import httpx
 import pytest
@@ -30,16 +31,18 @@ def test_structured_verdicts_keep_source_and_test_status(repository, monkeypatch
         "suggestion": "Add a test",
     }
 
-    def post(*args, **kwargs):
+    def post(method, url, **kwargs):
         packet = json.loads(kwargs["json"]["messages"][1]["content"])
         assert packet["evidence"][0]["quote"] == evidence[0].quote
-        return httpx.Response(
-            200,
-            json={"choices": [{"message": {"content": json.dumps(claim)}}]},
-            request=httpx.Request("POST", args[0]),
+        return nullcontext(
+            httpx.Response(
+                200,
+                json={"choices": [{"message": {"content": json.dumps(claim)}}]},
+                request=httpx.Request(method, url),
+            )
         )
 
-    monkeypatch.setattr(httpx, "post", post)
+    monkeypatch.setattr(httpx, "stream", post)
     result = ModelVerifier().verify(decompose("Apply discount")[0], evidence)
     assert result.verdict == verdict
     assert result.tests.status == "not_run"
@@ -59,11 +62,13 @@ def test_fabricated_model_citation_downgrades_to_abstention(repository, monkeypa
     }
     monkeypatch.setattr(
         httpx,
-        "post",
-        lambda *args, **kwargs: httpx.Response(
-            200,
-            json={"choices": [{"message": {"content": json.dumps(claim)}}]},
-            request=httpx.Request("POST", args[0]),
+        "stream",
+        lambda method, url, **kwargs: nullcontext(
+            httpx.Response(
+                200,
+                json={"choices": [{"message": {"content": json.dumps(claim)}}]},
+                request=httpx.Request(method, url),
+            )
         ),
     )
     result = ModelVerifier().verify(decompose("Apply discount")[0], evidence)

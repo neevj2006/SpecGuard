@@ -16,6 +16,8 @@ jobs:
       - run: uv sync --locked
       - run: npm run check
       - run: npm run build --workspace @specguard/web
+      - run: npm audit --omit=dev --audit-level=high
+      - run: uv run pip-audit --progress-spinner off
   postgres:
     runs-on: ubuntu-latest
     services:
