@@ -128,7 +128,7 @@ scripts/demo.py      Repeatable local fixture creation
 
 The API calls the analysis layer; domain code has no dependency on HTTP or storage. The Git adapter reads objects without checking out or executing reviewed code. A Node process parses bounded source using the TypeScript compiler API. BM25 retrieves symbol-sized chunks, with changed-span and symbol boosts. SQLite or PostgreSQL stores validated results transactionally. Repeated identical inputs reuse a stored run before verifier calls, after rebuilding the source index to establish revision identity.
 
-Budgets: 50 criteria, 200 source files, 100 KB per source file, and 2 MB total source per run. Generated/dependency paths, declarations, non-UTF-8 files, symlinks, and syntax-invalid source are omitted. Changed files are considered first. A verifier call has a 45-second timeout; later criteria abstain once the inference time budget is reached. The API allows at most two concurrent analyses.
+Budgets: 50 criteria, 200 source files, 100 KB per source file, and 2 MB total source per run. Generated/dependency paths, declarations, non-UTF-8 files, symlinks, and syntax-invalid source are omitted. Changed files are considered first. Relative imports are resolved only when the indexed target is unambiguous; a one-hop neighborhood of at most 30 files receives a small ranking boost when lexical evidence also matches. Scores expose BM25, change, symbol, and import-neighbor contributions in exports. A verifier call has a 45-second timeout; later criteria abstain once the inference time budget is reached. The API allows at most two concurrent analyses.
 
 ## Development
 
@@ -141,10 +141,12 @@ The checks cover formatting, Python lint/type checking, AST spans, retrieval met
 
 ## Current limits
 
+Reproduce the synthetic retrieval regression benchmark with `uv run python scripts/evaluate.py`. The report is written to `.specguard/retrieval-report.json`. Ten MIT-licensed toy cases are separated into six development and four test groups, with no group shared between splits. Both ranking variants achieve Recall@3 of 1.0 on these fixtures; import-neighbor boosts improve the four-case test MRR from 0.625 to 1.0. These deliberately small fixtures test ranking mechanics, not general retrieval quality. They are not human-adjudicated and do not measure verdict correctness, calibration, or reviewer time.
+
 - GitHub operations have offline contract coverage; live credentials, installation configuration, and end-to-end provider validation are still required. OAuth self-service is not included.
 - The default verifier always abstains. Model-backed verdicts have contract tests but no live-provider evaluation yet.
 - Retrieval is BM25 with explicit boosts. Learned embeddings, reranking, fine-tuning, and a human-adjudicated benchmark are not included yet. Metric functions are tested; no retrieval-quality or reviewer-time claims are made.
-- Import edges are extracted but unresolved; a resolved call graph and dependency-neighborhood expansion remain future work.
+- Unambiguous relative import paths are resolved. Package exports, aliases, dynamic imports, and runtime call graphs remain unresolved; the neighborhood is a syntactic approximation.
 - Deleted source is absent from the head index, and no negative verdict is inferred from its absence. Oversized repositories can omit useful supporting context.
 - SQLite and PostgreSQL persistence are implemented. Public multi-user authentication, pgvector, deployment, scheduled retention, and operational monitoring remain pending.
 - No test execution sandbox, automatic merge blocking, or formal verification is provided.

@@ -4,6 +4,7 @@ from pathlib import Path
 
 from services.analysis.decompose import decompose
 from services.analysis.domain import AnalysisRun, Criterion, stable_id
+from services.analysis.graph import neighbors
 from services.analysis.repository import index_change, validate_citation
 from services.analysis.retrieval import rank
 from services.analysis.verifier import BaselineVerifier, Verifier
@@ -51,8 +52,8 @@ def analyze_index(
     verifier = verifier or BaselineVerifier()
     versions = {
         "parser": index["parser_version"],
-        "index": "2",
-        "retriever": "bm25/1",
+        "index": "3",
+        "retriever": "bm25/2",
         "verifier": verifier.version,
         "prompt": "1",
         "model": getattr(verifier, "model", "none"),
@@ -65,8 +66,11 @@ def analyze_index(
         except KeyError:
             pass
     results = []
+    neighbor_paths = neighbors(
+        index.get("imports", []), {chunk.path for chunk in index["chunks"] if chunk.changed}
+    )
     for criterion in criteria:
-        candidates = rank(criterion.text, index["chunks"])
+        candidates = rank(criterion.text, index["chunks"], neighbor_paths=neighbor_paths)
         if time.perf_counter() - started > 45:
             result = BaselineVerifier().verify(criterion, candidates)
             result.uncertainty = (

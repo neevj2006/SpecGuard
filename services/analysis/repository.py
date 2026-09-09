@@ -133,6 +133,8 @@ def parse_sources(
         chunks.extend(
             Evidence(**chunk, changed=chunk["path"] in changed) for chunk in file["chunks"]
         )
+    from services.analysis.graph import resolve_imports
+
     return {
         "base_sha": base_sha,
         "head_sha": head_sha,
@@ -140,6 +142,15 @@ def parse_sources(
         "excluded": excluded,
         "parser_version": parsed["version"],
         "sources": {file["path"]: file["source"] for file in files},
+        "imports": resolve_imports(
+            [
+                edge
+                for file in parsed["files"]
+                if not file["diagnostics"]
+                for edge in file["imports"]
+            ],
+            {chunk.path for chunk in chunks},
+        ),
     }
 
 

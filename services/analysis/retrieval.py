@@ -12,18 +12,21 @@ def tokenize(text: str) -> list[str]:
     return re.findall(r"[a-z0-9]+", expanded.lower())
 
 
-def rank(query: str, chunks: list[Evidence], limit: int = 6) -> list[Evidence]:
+def rank(
+    query: str, chunks: list[Evidence], limit: int = 6, *, neighbor_paths: set[str] | None = None
+) -> list[Evidence]:
     if not chunks:
         return []
     documents = [Counter(tokenize(f"{c.path} {c.symbol} {c.quote}")) for c in chunks]
     terms = set(tokenize(query))
+    frequencies = Counter(term for document in documents for term in document)
     mean_length = sum(sum(d.values()) for d in documents) / len(documents)
     scored = []
     for chunk, document in zip(chunks, documents, strict=True):
         score = 0.0
         for term in terms:
             frequency = document[term]
-            count = sum(term in d for d in documents)
+            count = frequencies[term]
             idf = math.log(1 + (len(documents) - count + 0.5) / (count + 0.5))
             score += (
                 idf
@@ -32,9 +35,20 @@ def rank(query: str, chunks: list[Evidence], limit: int = 6) -> list[Evidence]:
                 / (frequency + 1.2 * (0.25 + 0.75 * sum(document.values()) / mean_length))
             )
         if score:
-            score *= 1.2 if chunk.changed else 1
-            score += 0.2 * len(terms.intersection(tokenize(chunk.symbol)))
-            scored.append(chunk.model_copy(update={"score": round(score, 5)}))
+            breakdown = {
+                "bm25": score,
+                "changed": score * 0.2 if chunk.changed else 0,
+                "symbol": 0.2 * len(terms.intersection(tokenize(chunk.symbol))),
+                "import_neighbor": score * 0.15 if chunk.path in (neighbor_paths or set()) else 0,
+            }
+            scored.append(
+                chunk.model_copy(
+                    update={
+                        "score": round(sum(breakdown.values()), 5),
+                        "score_breakdown": breakdown,
+                    }
+                )
+            )
     return sorted(scored, key=lambda c: (-c.score, c.path, c.start_line))[:limit]
 
 

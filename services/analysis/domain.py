@@ -36,6 +36,7 @@ class Evidence(Contract):
     kind: str
     score: float = Field(default=0, ge=0)
     changed: bool = False
+    score_breakdown: dict[str, float] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def valid_span(self):
