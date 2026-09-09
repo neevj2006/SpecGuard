@@ -1,9 +1,38 @@
 from fastapi.testclient import TestClient
 
-from services.analysis.decompose import decompose
+from services.analysis.decompose import RuleDecomposer, decompose
 from services.analysis.engine import analyze
 from services.api.main import create_app
 from services.api.store import Store
+
+
+def test_model_decomposition_requires_opt_in_and_releases_capacity(tmp_path, monkeypatch):
+    client = TestClient(create_app(tmp_path, tmp_path / "model.sqlite", "secret"))
+    client.headers["Authorization"] = "Bearer secret"
+    monkeypatch.delenv("SPECGUARD_MODEL", raising=False)
+    for _ in range(3):
+        assert (
+            client.post(
+                "/v1/criteria", json={"text": "Save receipts", "use_model": True}
+            ).status_code
+            == 422
+        )
+    calls = []
+
+    def propose(self, text):
+        calls.append(text)
+        return RuleDecomposer().decompose(text)
+
+    monkeypatch.setenv("SPECGUARD_MODEL", "test-model")
+    monkeypatch.setenv("SPECGUARD_MODEL_KEY", "test-key")
+    monkeypatch.setattr("services.api.main.ModelDecomposer.decompose", propose)
+    assert client.post("/v1/criteria", json={"text": "Save receipts"}).status_code == 200
+    assert calls == []
+    assert (
+        client.post("/v1/criteria", json={"text": "Save receipts", "use_model": True}).status_code
+        == 200
+    )
+    assert calls == ["Save receipts"]
 
 
 def test_decomposition_exposes_review_context_and_version(tmp_path):

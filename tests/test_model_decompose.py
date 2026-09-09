@@ -65,3 +65,29 @@ def test_secret_never_reaches_transport(model, monkeypatch):
 
     monkeypatch.setattr(httpx, "stream", forbidden)
     assert "not sent" in model.decompose("Use private-test-key").questions[0]
+
+
+@pytest.mark.parametrize(
+    "status,content", [(429, b"busy"), (200, b"x" * 100_001)], ids=["rate-limit", "oversized"]
+)
+def test_transport_failures_keep_offline_criteria(model, monkeypatch, status, content):
+    monkeypatch.setattr(
+        httpx,
+        "stream",
+        lambda method, url, **kwargs: nullcontext(
+            httpx.Response(status, content=content, request=httpx.Request(method, url))
+        ),
+    )
+    result = model.decompose("Save receipts")
+    assert result.version == "explicit-lists/3"
+    assert result.criteria[0].source_text == "Save receipts"
+
+
+def test_timeout_falls_back(model, monkeypatch):
+    def timeout(*args, **kwargs):
+        raise httpx.ReadTimeout("private provider details")
+
+    monkeypatch.setattr(httpx, "stream", timeout)
+    result = model.decompose("Save receipts")
+    assert "private provider details" not in result.model_dump_json()
+    assert "unavailable" in result.questions[0]

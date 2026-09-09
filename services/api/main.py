@@ -11,6 +11,7 @@ from pydantic import Field
 from services.analysis.decompose import Decomposition, RuleDecomposer
 from services.analysis.domain import Contract, Criterion
 from services.analysis.engine import analyze
+from services.analysis.model_decompose import ModelDecomposer
 from services.analysis.verifier import ModelVerifier
 from services.api.store import Store
 from services.integrations.github import GitHubError
@@ -19,6 +20,7 @@ from services.integrations.routes import github_router
 
 class RequirementInput(Contract):
     text: str = Field(min_length=1, max_length=20000)
+    use_model: bool = False
 
 
 class RunInput(Contract):
@@ -83,10 +85,16 @@ def create_app(
 
     @app.post("/v1/criteria", response_model=Decomposition)
     def criteria(body: RequirementInput, owner: str = Depends(authorize)):
+        if body.use_model and not slots.acquire(blocking=False):
+            raise HTTPException(429, "Analysis capacity reached; retry later")
         try:
-            return RuleDecomposer().decompose(body.text)
+            decomposer = ModelDecomposer() if body.use_model else RuleDecomposer()
+            return decomposer.decompose(body.text)
         except ValueError as error:
             raise HTTPException(422, str(error)) from error
+        finally:
+            if body.use_model:
+                slots.release()
 
     @app.get("/v1/repositories")
     def repositories(owner: str = Depends(authorize)):
