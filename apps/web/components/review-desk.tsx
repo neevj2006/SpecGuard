@@ -168,6 +168,7 @@ function SourceReference({
 
 type Props = {
   run: Run;
+  initialNotes: Record<string, string>;
   onNew: () => void;
   onEdit: () => void;
   onReport: () => void;
@@ -176,6 +177,7 @@ type Props = {
 
 export function ReviewDesk({
   run,
+  initialNotes,
   onNew,
   onEdit,
   onReport,
@@ -184,8 +186,9 @@ export function ReviewDesk({
   const [selected, setSelected] = useState(0);
   const [filter, setFilter] = useState<Verdict | "all">("all");
   const [query, setQuery] = useState("");
-  const [notes, setNotes] = useState<Record<string, string>>({});
-  const [savedNotes, setSavedNotes] = useState<Record<string, string>>({});
+  const [notes, setNotes] = useState<Record<string, string>>(initialNotes);
+  const [savedNotes, setSavedNotes] =
+    useState<Record<string, string>>(initialNotes);
   const [saving, setSaving] = useState(false);
   const [noteError, setNoteError] = useState("");
   const detailRef = useRef<HTMLElement>(null);

@@ -47,7 +47,7 @@ Open [the local workspace](http://127.0.0.1:3000), go to **Workspace settings**,
 
 On macOS/Linux, use `export SPECGUARD_REPOSITORY_ROOT="$PWD/.specguard"` and `export SPECGUARD_API_TOKEN="$(uv run python -c 'import secrets; print(secrets.token_urlsafe(32))')"` before starting the same API command.
 
-Both servers are intended to run on loopback. This preview is not a public multi-user deployment. A single configured API token identifies the local workspace; database ownership checks also isolate records created with different tokens. Token rotation changes the owner identity, so export needed runs before rotating.
+Both servers are intended to run on loopback. This preview is not a public multi-user deployment. A single configured API token identifies the local workspace. Set `SPECGUARD_OWNER_ID` to a stable workspace identifier before creating runs to preserve ownership when rotating the token. Without it, ownership is derived from the token for backward compatibility.
 
 ## Review workflow
 
@@ -55,7 +55,7 @@ Both servers are intended to run on loopback. This preview is not a public multi
 2. Paste requirements, decompose explicit lists, and edit each criterion.
 3. Run offline retrieval or explicitly select the configured model verifier.
 4. Inspect criterion evidence, inference, uncertainty, and execution status separately.
-5. Save reviewer notes, revisit history, export JSON, or copy a report preview.
+5. Save reviewer notes, revisit history, export results and notes as JSON, or copy a report preview.
 6. Delete a saved run to remove its results and reviewer notes from the application database.
 
 The interface supports four verdicts:
@@ -85,24 +85,48 @@ Variables are read from the process environment. `.env.example` is a reference, 
 | --- | --- | --- |
 | `SPECGUARD_REPOSITORY_ROOT` | `.` | Allowed root for local repository selection. |
 | `SPECGUARD_DATABASE` | `.specguard/runs.sqlite3` | Local result and feedback database. |
+| `SPECGUARD_DATABASE_URL` | Unset | Optional SQLAlchemy PostgreSQL URL (`postgresql+psycopg://...`); overrides the local file. |
+| `SPECGUARD_OWNER_ID` | Token hash | Stable workspace ownership across credential rotation. |
 | `SPECGUARD_API_TOKEN` | Unset | Required bearer token for all analysis endpoints. |
 | `SPECGUARD_MODEL` | Unset | Explicit model identifier for optional verification. |
 | `SPECGUARD_MODEL_KEY` | Unset | Provider credential, held by the API process. |
+| `SPECGUARD_GITHUB_APP_ID` | Unset | GitHub App identifier. |
+| `SPECGUARD_GITHUB_PRIVATE_KEY_FILE` | Unset | Private key path outside this checkout; never sent to the browser. |
+| `SPECGUARD_GITHUB_INSTALLATIONS` | Unset | Comma-separated installation IDs assigned by the server operator to this workspace. |
+| `SPECGUARD_GITHUB_WEBHOOK_SECRET` | Unset | Shared secret for raw-body HMAC verification. |
 
-Runs include source quotes, requirements, revision IDs, and version metadata. Protect the database as source code. Deletion removes application records and dependent feedback; secure disk erasure, backup expiration, and automatic retention are not implemented.
+Runs include source quotes, requirements, revision IDs, and version metadata. Protect the database as source code. Deletion removes application records, dependent feedback, and publication audit records; it does not delete an already published GitHub comment. Authenticated `DELETE /v1/retention?days=30` removes this workspace's runs older than 30 days. Retention is explicitly invoked, not scheduled. Secure disk erasure and backup expiration remain the operator's responsibility.
+
+### GitHub pull requests
+
+Create and install a GitHub App with repository **Contents: read**, **Issues: read**, and **Pull requests: read/write** permissions (write is required only for report publishing). Keep installation scope limited to selected repositories. Configure the App ID, private key file, installation IDs, and webhook secret on the API process. Private keys are read from that protected file; short-lived installation tokens are held only in memory and are not stored in the database.
+
+In **Repositories**, load GitHub repositories, select a pull request, and review the requirement and criteria. Source is read at the recorded head revision. The issue import API (`POST /v1/github/issue`) can fetch issue text for the selected repository. No checkout or package script is executed.
+
+Open **Report preview**, supply the authorized installation ID, load the server preview, then explicitly confirm publishing. The server checks repository access and rejects a stale head revision before writing the comment. Repeated publishing of a recorded run returns its existing comment. Webhooks at `/v1/github/webhook` validate signatures and persist delivery IDs for deduplication; they never trigger analysis. GitHub does not sign an event timestamp, so signature verification alone cannot establish freshness of a previously unseen delivery.
+
+This integration uses operator-assigned installations in a single-user workspace. Self-service OAuth and public multi-user hosting are not implemented. Contract tests use synthetic GitHub responses; a live installation must be validated before operational use.
+
+### Database migrations
+
+SQLite is the default. For PostgreSQL, set `SPECGUARD_DATABASE_URL` and run `uv run alembic upgrade head` before starting the API. The initial migration creates runs, feedback, installation assignments, webhook receipts, and publication records. Run payloads retain the versioned analysis contract, and related rows use foreign keys with cascading deletion.
+
+For an existing preview SQLite database, back it up, start the updated API once to create the additional tables, then run `uv run alembic stamp head` against that same database URL. Do not stamp an unrelated or incomplete database. CI migrates a fresh PostgreSQL 16 database and checks persistence, owner isolation, feedback updates, and deletion.
 
 ## Architecture
 
 ```text
 apps/web             Next.js workspace and local API proxy
-services/api         FastAPI transport, authentication, SQLite persistence
+services/api         FastAPI transport, authentication, SQLAlchemy persistence
 services/analysis    Contracts, Git adapter, BM25, verification, CLI
+services/integrations GitHub App transport, webhooks, manual report publishing
+infrastructure       Versioned database migrations
 indexing             TypeScript compiler AST extraction
 tests                Committed fixtures and contract/security tests
 scripts/demo.py      Repeatable local fixture creation
 ```
 
-The API calls the analysis layer; domain code has no dependency on HTTP or storage. The Git adapter reads objects without checking out or executing reviewed code. A Node process parses bounded source using the TypeScript compiler API. BM25 retrieves symbol-sized chunks, with changed-span and symbol boosts. SQLite stores validated results transactionally. Repeated identical inputs return the same persisted run identity, although analysis work is currently recomputed before persistence.
+The API calls the analysis layer; domain code has no dependency on HTTP or storage. The Git adapter reads objects without checking out or executing reviewed code. A Node process parses bounded source using the TypeScript compiler API. BM25 retrieves symbol-sized chunks, with changed-span and symbol boosts. SQLite or PostgreSQL stores validated results transactionally. Repeated identical inputs reuse a stored run before verifier calls, after rebuilding the source index to establish revision identity.
 
 Budgets: 50 criteria, 200 source files, 100 KB per source file, and 2 MB total source per run. Generated/dependency paths, declarations, non-UTF-8 files, symlinks, and syntax-invalid source are omitted. Changed files are considered first. A verifier call has a 45-second timeout; later criteria abstain once the inference time budget is reached. The API allows at most two concurrent analyses.
 
@@ -117,12 +141,12 @@ The checks cover formatting, Python lint/type checking, AST spans, retrieval met
 
 ## Current limits
 
-- GitHub App installation, OAuth, PR ingestion, webhooks, and publishing are not connected. Report preview only copies text or exports JSON.
+- GitHub operations have offline contract coverage; live credentials, installation configuration, and end-to-end provider validation are still required. OAuth self-service is not included.
 - The default verifier always abstains. Model-backed verdicts have contract tests but no live-provider evaluation yet.
 - Retrieval is BM25 with explicit boosts. Learned embeddings, reranking, fine-tuning, and a human-adjudicated benchmark are not included yet. Metric functions are tested; no retrieval-quality or reviewer-time claims are made.
 - Import edges are extracted but unresolved; a resolved call graph and dependency-neighborhood expansion remain future work.
 - Deleted source is absent from the head index, and no negative verdict is inferred from its absence. Oversized repositories can omit useful supporting context.
-- Persistence is local SQLite. PostgreSQL/pgvector, multi-user tenancy, deployment, automatic retention, and operational monitoring remain pending.
+- SQLite and PostgreSQL persistence are implemented. Public multi-user authentication, pgvector, deployment, scheduled retention, and operational monitoring remain pending.
 - No test execution sandbox, automatic merge blocking, or formal verification is provided.
 
 ## License

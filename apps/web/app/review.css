@@ -1944,3 +1944,56 @@ body {
     scroll-margin-top: 6px;
   }
 }
+.github-repositories {
+  border-top: 1px solid var(--border);
+  margin-top: 30px;
+  padding-top: 24px;
+}
+.github-repositories .section-title {
+  flex-wrap: wrap;
+}
+.github-repositories .section-title button {
+  margin-left: auto;
+}
+.github-repo-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+.github-repo-row > span {
+  color: #718365;
+  font-size: 11px;
+}
+.github-repo-row button {
+  margin-left: auto;
+}
+.github-pulls {
+  margin-top: 20px;
+}
+.report-publish {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.report-publish > label:first-child {
+  font-size: 12px;
+}
+.report-publish > input {
+  max-width: 130px;
+}
+@media (max-width: 650px) {
+  .github-repo-row {
+    flex-wrap: wrap;
+  }
+  .github-repositories .section-title button {
+    margin-left: 0;
+  }
+}
+.report-dialog {
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
+}

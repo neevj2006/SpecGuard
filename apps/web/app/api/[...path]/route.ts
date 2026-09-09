@@ -16,16 +16,19 @@ async function forward(
   if (body && body.length > 250000)
     return new Response("Request too large", { status: 413 });
   try {
-    const result = await fetch(`http://127.0.0.1:8000/${path.join("/")}`, {
-      method: request.method,
-      body,
-      cache: "no-store",
-      signal: AbortSignal.timeout(120000),
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: request.headers.get("authorization") ?? "",
+    const result = await fetch(
+      `http://127.0.0.1:8000/${path.join("/")}${request.nextUrl.search}`,
+      {
+        method: request.method,
+        body,
+        cache: "no-store",
+        signal: AbortSignal.timeout(240000),
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: request.headers.get("authorization") ?? "",
+        },
       },
-    });
+    );
     return new Response(result.status === 204 ? null : await result.text(), {
       status: result.status,
       headers: { "Content-Type": "application/json" },

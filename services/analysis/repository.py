@@ -70,6 +70,48 @@ def index_change(repo: Path, base: str, head: str) -> dict:
             continue
         files.append({"path": path, "source": source})
         total += size
+    index = parse_sources(files, base_sha, head_sha, changed, excluded)
+    spans_by_path = {}
+    for path in {chunk.path for chunk in index["chunks"] if chunk.changed}:
+        patch = git(
+            repo,
+            "diff",
+            "--no-ext-diff",
+            "--no-textconv",
+            "--unified=0",
+            base_sha,
+            head_sha,
+            "--",
+            path,
+        ).decode("utf-8", errors="replace")
+        spans = []
+        for first, count in re.findall(
+            r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@", patch, re.MULTILINE
+        ):
+            start, length = int(first), int(count) if count else 1
+            spans.append((max(1, start), max(1, start + max(length, 1) - 1)))
+        spans_by_path[path] = spans
+    index["chunks"] = [
+        chunk.model_copy(
+            update={
+                "changed": any(
+                    chunk.start_line <= end and chunk.end_line >= start
+                    for start, end in spans_by_path.get(chunk.path, [])
+                )
+            }
+        )
+        for chunk in index["chunks"]
+    ]
+    return index
+
+
+def parse_sources(
+    files: list[dict[str, str]],
+    base_sha: str,
+    head_sha: str,
+    changed: set[str],
+    excluded: list[dict[str, str]],
+) -> dict:
     script = Path(__file__).resolve().parents[2] / "indexing" / "parse.mjs"
     result = subprocess.run(
         ["node", str(script)],
@@ -88,32 +130,8 @@ def index_change(repo: Path, base: str, head: str) -> dict:
         if file["diagnostics"]:
             excluded.append({"path": file["path"], "reason": "Syntax errors; evidence omitted"})
             continue
-        spans = []
-        if file["path"] in changed:
-            patch = git(
-                repo,
-                "diff",
-                "--no-ext-diff",
-                "--no-textconv",
-                "--unified=0",
-                base_sha,
-                head_sha,
-                "--",
-                file["path"],
-            ).decode("utf-8", errors="replace")
-            for start, count in re.findall(
-                r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@", patch, re.MULTILINE
-            ):
-                first, length = int(start), int(count) if count else 1
-                spans.append((max(1, first), max(1, first + max(length, 1) - 1)))
         chunks.extend(
-            Evidence(
-                **c,
-                changed=any(
-                    c["start_line"] <= end and c["end_line"] >= start for start, end in spans
-                ),
-            )
-            for c in file["chunks"]
+            Evidence(**chunk, changed=chunk["path"] in changed) for chunk in file["chunks"]
         )
     return {
         "base_sha": base_sha,
@@ -121,7 +139,7 @@ def index_change(repo: Path, base: str, head: str) -> dict:
         "chunks": chunks,
         "excluded": excluded,
         "parser_version": parsed["version"],
-        "sources": {f["path"]: f["source"] for f in files},
+        "sources": {file["path"]: file["source"] for file in files},
     }
 
 

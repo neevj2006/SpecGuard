@@ -26,6 +26,7 @@ export type Result = {
 export type Run = {
   id: string;
   repository: string;
+  pull_number?: number | null;
   base_sha: string;
   head_sha: string;
   requirement: string;

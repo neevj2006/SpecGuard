@@ -1,5 +1,9 @@
 "use client";
 
+import {
+  GitHubRepositories,
+  type GitHubSelection,
+} from "@/components/github-repositories";
 import { ReviewDesk } from "@/components/review-desk";
 import { Button } from "@/components/ui/button";
 import {
@@ -41,9 +45,11 @@ const labels: Record<Verdict, string> = {
   not_verifiable: "Not verifiable",
 };
 type View = "review" | "new" | "history" | "repositories" | "settings";
-function download(run: Run) {
+function download(run: Run, feedback: Record<string, string> = {}) {
   const url = URL.createObjectURL(
-    new Blob([JSON.stringify(run, null, 2)], { type: "application/json" }),
+    new Blob([JSON.stringify({ run, feedback }, null, 2)], {
+      type: "application/json",
+    }),
   );
   const a = document.createElement("a");
   a.href = url;
@@ -55,6 +61,8 @@ function download(run: Run) {
 export default function Dashboard() {
   const [view, setView] = useState<View>("review");
   const [run, setRun] = useState<Run>(exampleRun);
+  const [initialNotes, setInitialNotes] = useState<Record<string, string>>({});
+  const [reviewSession, setReviewSession] = useState(0);
   const [token, setToken] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -72,6 +80,11 @@ export default function Dashboard() {
     exampleRun.results.map((r) => r.criterion),
   );
   const [useModel, setUseModel] = useState(false);
+  const [githubSelection, setGithubSelection] =
+    useState<GitHubSelection | null>(null);
+  const [reportConfirmed, setReportConfirmed] = useState(false);
+  const [reportPreview, setReportPreview] = useState("");
+  const [reportInstallation, setReportInstallation] = useState("");
   const [report, setReport] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const demo = run.id === "example-review";
@@ -117,6 +130,23 @@ export default function Dashboard() {
     setView(next);
     setError("");
     setNotice("");
+  }
+  async function openRun(next: Run) {
+    const notes =
+      next.id === "example-review"
+        ? {}
+        : await api<Record<string, string>>(`runs/${next.id}/feedback`);
+    setInitialNotes(notes);
+    setReviewSession((value) => value + 1);
+    setRun(next);
+    navigate("review");
+  }
+  async function exportRun(next: Run) {
+    if (next.id === "example-review") return download(next);
+    const data = await api<{ run: Run; feedback: Record<string, string> }>(
+      `runs/${next.id}/export`,
+    );
+    download(data.run, data.feedback);
   }
   const reportText = `## SpecGuard requirement review\n\n${demo ? "Illustrative example — not an analysis of a real pull request.\n\n" : ""}Revision: ${run.head_sha}\n\n${run.results.map((r) => `- **${labels[r.verdict]}** — ${r.criterion.text}\n  ${r.rationale}\n  ${r.evidence.map((e) => `${e.path}:${e.start_line}-${e.end_line}`).join(", ") || "No supporting evidence"}\n  Tests: ${r.tests.status}`).join("\n\n")}\n\nStatic inference is not proof of runtime correctness.`;
 
@@ -239,15 +269,20 @@ export default function Dashboard() {
         )}
         <div className="review-root" hidden={view !== "review"}>
           <ReviewDesk
-            key={run.id}
+            key={`${run.id}:${reviewSession}`}
             run={run}
+            initialNotes={initialNotes}
             onNew={() => navigate("new")}
             onEdit={() => {
               setRequirement(run.requirement);
               setCriteria(run.results.map((r) => r.criterion));
               navigate("new");
             }}
-            onReport={() => setReport(true)}
+            onReport={() => {
+              setReport(true);
+              setReportConfirmed(false);
+              setReportPreview("");
+            }}
             onSaveNote={async (criterionId, note) => {
               await api(`runs/${run.id}/feedback`, "POST", {
                 criterion_id: criterionId,
@@ -315,6 +350,26 @@ export default function Dashboard() {
                 </Button>
               </div>
             )}
+            {githubSelection && (
+              <div className="connection-guidance">
+                <GitPullRequest size={16} />
+                <span>
+                  {githubSelection.repository} · PR #{githubSelection.number}:{" "}
+                  {githubSelection.title}
+                </span>
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    setGithubSelection(null);
+                    setRepository(".");
+                    setBase("HEAD~1");
+                    setHead("HEAD");
+                  }}
+                >
+                  Use local checkout
+                </Button>
+              </div>
+            )}
             <div className="editor-grid">
               <div>
                 <div className="form-section">
@@ -323,10 +378,15 @@ export default function Dashboard() {
                     <h2>Select the change</h2>
                   </div>
                   <label htmlFor="repo">
-                    Repository path{" "}
-                    <span>Relative to the configured repository root</span>
+                    {githubSelection ? "GitHub repository" : "Repository path"}{" "}
+                    <span>
+                      {githubSelection
+                        ? "Selected pull request repository"
+                        : "Relative to the configured repository root"}
+                    </span>
                   </label>
                   <Input
+                    readOnly={!!githubSelection}
                     id="repo"
                     value={repository}
                     onChange={(e) => setRepository(e.target.value)}
@@ -335,6 +395,7 @@ export default function Dashboard() {
                     <div>
                       <label htmlFor="base">Base revision</label>
                       <Input
+                        readOnly={!!githubSelection}
                         id="base"
                         value={base}
                         onChange={(e) => setBase(e.target.value)}
@@ -343,6 +404,7 @@ export default function Dashboard() {
                     <div>
                       <label htmlFor="head">Head revision</label>
                       <Input
+                        readOnly={!!githubSelection}
                         id="head"
                         value={head}
                         onChange={(e) => setHead(e.target.value)}
@@ -481,15 +543,24 @@ export default function Dashboard() {
                   }
                   onClick={() =>
                     perform(async () => {
-                      const result = await api<Run>("runs", "POST", {
-                        repository,
-                        base,
-                        head,
-                        requirement,
-                        criteria,
-                        use_model: useModel,
-                      });
-                      setRun(result);
+                      const result = await api<Run>(
+                        githubSelection ? "github/runs" : "runs",
+                        "POST",
+                        {
+                          ...(githubSelection
+                            ? {
+                                installation_id:
+                                  githubSelection.installation_id,
+                                number: githubSelection.number,
+                              }
+                            : { base, head }),
+                          repository,
+                          requirement,
+                          criteria,
+                          use_model: useModel,
+                        },
+                      );
+                      await openRun(result);
                       setHistoryLoaded(true);
                       setHistory([
                         result,
@@ -558,10 +629,7 @@ export default function Dashboard() {
                       <td>
                         <button
                           className="text-button"
-                          onClick={() => {
-                            setRun(r);
-                            navigate("review");
-                          }}
+                          onClick={() => perform(() => openRun(r))}
                         >
                           <FolderGit2 size={16} />
                           {r.repository}
@@ -583,7 +651,7 @@ export default function Dashboard() {
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => download(r)}
+                          onClick={() => perform(() => exportRun(r))}
                         >
                           Export
                         </Button>
@@ -659,6 +727,7 @@ export default function Dashboard() {
                     <Button
                       variant="outline"
                       onClick={() => {
+                        setGithubSelection(null);
                         setRepository(r.path);
                         navigate("new");
                       }}
@@ -683,17 +752,18 @@ export default function Dashboard() {
                 </Button>
               </div>
             )}
-            <div className="integration-note">
-              <GitPullRequest size={21} />
-              <div>
-                <h3>GitHub integration</h3>
-                <p>
-                  Installation, pull request selection, and report publishing
-                  require a configured GitHub App. The local workspace does not
-                  connect to GitHub automatically.
-                </p>
-              </div>
-            </div>
+            <GitHubRepositories
+              api={api}
+              onSelect={(selection) => {
+                setGithubSelection(selection);
+                setRepository(selection.repository);
+                setBase(selection.base);
+                setHead(selection.head);
+                setRequirement(selection.requirement);
+                setCriteria([]);
+                navigate("new");
+              }}
+            />
           </section>
         )}
         {view === "settings" && (
@@ -788,20 +858,101 @@ export default function Dashboard() {
           <DialogHeader>
             <DialogTitle>Review report</DialogTitle>
             <DialogDescription>
-              Inspect the report before copying it. Publishing to GitHub is not
-              configured.
+              Inspect the report before copying or publishing. GitHub publishing
+              requires a preview and explicit confirmation.
             </DialogDescription>
           </DialogHeader>
-          <pre className="report-text">{reportText}</pre>
+          <pre className="report-text">{reportPreview || reportText}</pre>
+          {error && (
+            <p role="alert" className="inline-error">
+              {error}
+            </p>
+          )}
+          {run.pull_number && (
+            <div className="report-publish">
+              <label htmlFor="report-installation">
+                Authorized installation ID
+              </label>
+              <Input
+                id="report-installation"
+                inputMode="numeric"
+                value={reportInstallation}
+                onChange={(event) => {
+                  setReportInstallation(event.target.value);
+                  setReportPreview("");
+                  setReportConfirmed(false);
+                }}
+              />
+              <Button
+                variant="outline"
+                disabled={busy || !/^[1-9][0-9]*$/.test(reportInstallation)}
+                onClick={() =>
+                  perform(async () => {
+                    const result = await api<{ preview: string }>(
+                      "github/report",
+                      "POST",
+                      {
+                        installation_id: Number(reportInstallation),
+                        repository: run.repository,
+                        run_id: run.id,
+                      },
+                    );
+                    setReportPreview(result.preview);
+                  })
+                }
+              >
+                Load publish preview
+              </Button>
+              {reportPreview && (
+                <label className="checkbox-label">
+                  <input
+                    type="checkbox"
+                    checked={reportConfirmed}
+                    onChange={(event) =>
+                      setReportConfirmed(event.target.checked)
+                    }
+                  />
+                  Publish this report to {run.repository} #{run.pull_number}
+                </label>
+              )}
+              <Button
+                disabled={busy || !reportPreview || !reportConfirmed}
+                onClick={() =>
+                  perform(async () => {
+                    const result = await api<{ url: string }>(
+                      "github/report",
+                      "POST",
+                      {
+                        installation_id: Number(reportInstallation),
+                        repository: run.repository,
+                        run_id: run.id,
+                        confirmed: true,
+                      },
+                    );
+                    setReport(false);
+                    setNotice(`Report published: ${result.url}`);
+                  })
+                }
+              >
+                Publish report
+              </Button>
+            </div>
+          )}
           <DialogFooter>
-            <Button variant="outline" onClick={() => download(run)}>
+            <Button
+              variant="outline"
+              onClick={() => perform(() => exportRun(run))}
+            >
               <ArrowDownToLine size={14} />
               Export JSON
             </Button>
             <Button
+              variant="outline"
               onClick={() =>
                 perform(async () => {
-                  await navigator.clipboard.writeText(reportText);
+                  await navigator.clipboard.writeText(
+                    reportPreview || reportText,
+                  );
                   setReport(false);
                   setNotice("Report copied.");
                 })

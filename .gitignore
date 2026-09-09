@@ -12,3 +12,5 @@ dist/
 .specguard/
 *.tsbuildinfo
 coverage/
+*.pem
+*.key

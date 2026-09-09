@@ -100,6 +100,7 @@ class CriterionResult(Contract):
 class AnalysisRun(Contract):
     id: str
     repository: str
+    pull_number: int | None = Field(default=None, ge=1)
     base_sha: str
     head_sha: str
     requirement: str
