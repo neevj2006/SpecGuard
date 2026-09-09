@@ -10,12 +10,20 @@ from services.analysis.domain import Contract, Criterion, stable_id
 MARKER = re.compile(r"^([ \t]*)(?:[-*+]|\d+[.)])(?:[ \t]+|$)(.*)$")
 
 
+class DecompositionUsage(Contract):
+    requested_model: str = Field(min_length=1, max_length=200)
+    request_attempted: bool
+    total_tokens: int | None = Field(default=None, ge=0, strict=True)
+    elapsed_ms: int = Field(ge=0)
+
+
 class Decomposition(Contract):
     criteria: list[Criterion] = Field(min_length=1, max_length=50)
     context: str = Field(default="", max_length=20000)
     assumptions: list[str] = Field(default_factory=list, max_length=50)
     questions: list[str] = Field(default_factory=list, max_length=50)
     version: str = Field(min_length=1, max_length=200)
+    usage: DecompositionUsage | None = None
 
 
 class Decomposer(Protocol):

@@ -24,6 +24,8 @@ uv run specguard decompose .specguard/checkout/requirement.txt --output .specgua
 uv run specguard analyze .specguard/checkout --base HEAD~1 --requirement .specguard/checkout/requirement.txt --criteria .specguard/criteria.json --json
 ```
 
+Add `--details` to `decompose` to save context, review questions, proposed assumptions, and decomposer provenance alongside the criteria. `analyze --criteria` accepts either this detailed export or the original criteria list. Review metadata is retained in the export; analysis consumes its criteria only. Model decomposition records the requested model, whether a request was attempted, elapsed milliseconds, and provider-reported token usage even if the proposal is rejected. Missing usage stays `null`; no monetary cost is inferred.
+
 For another repository, supply its local path and the base/head revisions to compare. Only committed source is read; uncommitted changes are excluded.
 
 ### Web workspace

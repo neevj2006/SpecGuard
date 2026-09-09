@@ -2,11 +2,12 @@
 
 import json
 import os
+from time import perf_counter
 
 import httpx
 from pydantic import Field
 
-from services.analysis.decompose import Decomposition, RuleDecomposer
+from services.analysis.decompose import Decomposition, DecompositionUsage, RuleDecomposer
 from services.analysis.domain import Contract, Criterion, stable_id
 from services.analysis.privacy import contains_secret
 
@@ -38,11 +39,16 @@ class ModelDecomposer:
         self.version = f"model-decomposition/{self.model}/prompt-1"
 
     def decompose(self, text: str) -> Decomposition:
+        started = perf_counter()
         fallback = RuleDecomposer().decompose(text)
+        usage = DecompositionUsage(
+            requested_model=self.model, request_attempted=False, elapsed_ms=0
+        )
         reason = "Model decomposition unavailable or invalid; review the rule-based criteria."
         if contains_secret(text, (self.key,)):
             reason = "Possible secret detected; requirement was not sent to the provider."
         else:
+            usage.request_attempted = True
             try:
                 with httpx.stream(
                     "POST",
@@ -69,6 +75,12 @@ class ModelDecomposer:
                         if len(content) > 100_000:
                             raise ValueError("Decomposition exceeds output budget")
                     payload = json.loads(content)
+                provider_usage = payload.get("usage")
+                reported = (
+                    provider_usage.get("total_tokens") if isinstance(provider_usage, dict) else None
+                )
+                if type(reported) is int and reported >= 0:
+                    usage.total_tokens = reported
                 proposal = Proposal.model_validate_json(payload["choices"][0]["message"]["content"])
                 if any(
                     not c.source_text.strip() or c.source_text not in text or not c.text.strip()
@@ -89,7 +101,13 @@ class ModelDecomposer:
                         "Review model proposals against the original requirement before analysis.",
                     ],
                     version=self.version,
+                    usage=usage.model_copy(
+                        update={"elapsed_ms": int((perf_counter() - started) * 1000)}
+                    ),
                 )
             except (httpx.HTTPError, ValueError, KeyError, IndexError, TypeError, AttributeError):
                 pass
-        return fallback.model_copy(update={"questions": [reason, *fallback.questions][:50]})
+        usage.elapsed_ms = int((perf_counter() - started) * 1000)
+        return fallback.model_copy(
+            update={"questions": [reason, *fallback.questions][:50], "usage": usage}
+        )

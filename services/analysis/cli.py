@@ -2,11 +2,20 @@ import argparse
 import json
 from pathlib import Path
 
-from services.analysis.decompose import RuleDecomposer
+from services.analysis.decompose import Decomposition, RuleDecomposer
 from services.analysis.domain import Criterion
 from services.analysis.engine import analyze
 from services.analysis.model_decompose import ModelDecomposer
 from services.analysis.verifier import ModelVerifier
+
+
+def read_criteria(path: Path) -> list[Criterion]:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if isinstance(payload, dict):
+        return Decomposition.model_validate(payload).criteria
+    if not isinstance(payload, list):
+        raise TypeError("Criteria file must contain a criteria list or detailed decomposition")
+    return [Criterion.model_validate(c) for c in payload]
 
 
 def main():
@@ -15,6 +24,9 @@ def main():
     split = commands.add_parser("decompose", help="Save editable acceptance criteria as JSON")
     split.add_argument("requirement", type=Path)
     split.add_argument("--output", required=True, type=Path)
+    split.add_argument(
+        "--details", action="store_true", help="Include context, review guidance and usage in JSON"
+    )
     split.add_argument(
         "--model", action="store_true", help="Send requirement to configured provider"
     )
@@ -35,7 +47,9 @@ def main():
             decomposer = ModelDecomposer() if args.model else RuleDecomposer()
             proposal = decomposer.decompose(requirement)
             args.output.write_text(
-                json.dumps([c.model_dump() for c in proposal.criteria], indent=2),
+                proposal.model_dump_json(indent=2)
+                if args.details
+                else json.dumps([c.model_dump() for c in proposal.criteria], indent=2),
                 encoding="utf-8",
             )
             print(f"Review and edit criteria in {args.output} before analysis.")
@@ -47,11 +61,7 @@ def main():
             for question in proposal.questions:
                 print(f"Review: {question}")
             return
-        criteria = (
-            [Criterion.model_validate(c) for c in json.loads(args.criteria.read_text())]
-            if args.criteria
-            else None
-        )
+        criteria = read_criteria(args.criteria) if args.criteria else None
         result = analyze(
             args.repository,
             args.base,
@@ -75,7 +85,7 @@ def main():
                 )
             if item.uncertainty:
                 print(f"Uncertainty: {item.uncertainty}")
-    except (ValueError, OSError) as error:
+    except (ValueError, TypeError, OSError) as error:
         parser.exit(2, f"specguard: {error}\n")
 
 

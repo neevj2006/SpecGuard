@@ -14,7 +14,7 @@ def model(monkeypatch):
     return ModelDecomposer()
 
 
-def response(monkeypatch, proposal):
+def response(monkeypatch, proposal, usage=None):
     def send(method, url, **kwargs):
         assert kwargs["json"]["messages"][0]["role"] == "system"
         assert json.loads(kwargs["json"]["messages"][1]["content"]) == {
@@ -24,7 +24,10 @@ def response(monkeypatch, proposal):
             httpx.Response(
                 200,
                 request=httpx.Request(method, url),
-                json={"choices": [{"message": {"content": json.dumps(proposal)}}]},
+                json={
+                    "choices": [{"message": {"content": json.dumps(proposal)}}],
+                    "usage": usage or {},
+                },
             )
         )
 
@@ -91,3 +94,28 @@ def test_timeout_falls_back(model, monkeypatch):
     result = model.decompose("Save receipts")
     assert "private provider details" not in result.model_dump_json()
     assert "unavailable" in result.questions[0]
+
+
+@pytest.mark.parametrize("tokens", [0, 123, None, -1, True, "123"])
+def test_usage_records_only_valid_provider_counts(model, monkeypatch, tokens):
+    response(
+        monkeypatch,
+        {"criteria": [{"text": "Save", "source_text": "Save receipts"}]},
+        {"total_tokens": tokens},
+    )
+    result = model.decompose("Save receipts")
+    assert result.usage.request_attempted
+    assert result.usage.requested_model == "test-model"
+    expected = tokens if type(tokens) is int and tokens >= 0 else None
+    assert result.usage.total_tokens == expected
+    assert result.usage.elapsed_ms >= 0
+
+
+def test_usage_survives_rejected_proposal(model, monkeypatch):
+    response(monkeypatch, {"criteria": []}, {"total_tokens": 87})
+    result = model.decompose("Save receipts")
+    assert result.version == "explicit-lists/3"
+    assert result.usage.total_tokens == 87
+    withheld = model.decompose("Use private-test-key")
+    assert not withheld.usage.request_attempted
+    assert withheld.usage.total_tokens is None
