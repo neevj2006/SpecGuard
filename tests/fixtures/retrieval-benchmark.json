@@ -1,0 +1,178 @@
+{
+  "version": "synthetic-retrieval/1",
+  "license": "MIT",
+  "origin": "synthetic",
+  "annotation_status": "not_human_adjudicated",
+  "cases": [
+    {
+      "id": "discount",
+      "group": "discount",
+      "split": "development",
+      "query": "Apply discount to an eligible order",
+      "files": {
+        "src/discount.ts": "export function applyDiscount(total: number, eligible: boolean) {\n  return eligible ? total * 0.9 : total;\n}\n",
+        "src/discount-display.ts": "export const discountLabel = \"discount\";\nexport function displayApplyDiscount() { return discountLabel; }\n",
+        "src/main.ts": "import { applyDiscount } from \"./discount\";\nexport const handler = applyDiscount;\n"
+      },
+      "relevant_symbols": [
+        "applyDiscount"
+      ],
+      "changed_paths": [
+        "src/main.ts"
+      ]
+    },
+    {
+      "id": "expiry",
+      "group": "expiry",
+      "split": "development",
+      "query": "Reject an expired promotion",
+      "files": {
+        "src/expiry.ts": "export function rejectExpiredPromotion(expiresAt: number, now: number) {\n  return expiresAt < now;\n}\n",
+        "src/expiry-display.ts": "export const expiryLabel = \"expiry\";\nexport function displayRejectExpiredPromotion() { return expiryLabel; }\n",
+        "src/main.ts": "import { rejectExpiredPromotion } from \"./expiry\";\nexport const handler = rejectExpiredPromotion;\n"
+      },
+      "relevant_symbols": [
+        "rejectExpiredPromotion"
+      ],
+      "changed_paths": [
+        "src/main.ts"
+      ]
+    },
+    {
+      "id": "receipt",
+      "group": "receipt",
+      "split": "development",
+      "query": "Send an order receipt",
+      "files": {
+        "src/receipt.ts": "export function sendOrderReceipt(orderId: string) {\n  return { orderId, sent: true };\n}\n",
+        "src/receipt-display.ts": "export const receiptLabel = \"receipt\";\nexport function displaySendOrderReceipt() { return receiptLabel; }\n",
+        "src/main.ts": "import { sendOrderReceipt } from \"./receipt\";\nexport const handler = sendOrderReceipt;\n"
+      },
+      "relevant_symbols": [
+        "sendOrderReceipt"
+      ],
+      "changed_paths": [
+        "src/main.ts"
+      ]
+    },
+    {
+      "id": "stock",
+      "group": "stock",
+      "split": "development",
+      "query": "Reduce product stock by quantity",
+      "files": {
+        "src/stock.ts": "export function reduceProductStock(stock: number, quantity: number) {\n  return stock - quantity;\n}\n",
+        "src/stock-display.ts": "export const stockLabel = \"stock\";\nexport function displayReduceProductStock() { return stockLabel; }\n",
+        "src/main.ts": "import { reduceProductStock } from \"./stock\";\nexport const handler = reduceProductStock;\n"
+      },
+      "relevant_symbols": [
+        "reduceProductStock"
+      ],
+      "changed_paths": [
+        "src/main.ts"
+      ]
+    },
+    {
+      "id": "email",
+      "group": "email",
+      "split": "development",
+      "query": "Normalize email address",
+      "files": {
+        "src/email.ts": "export function normalizeEmail(address: string) {\n  return address.trim().toLowerCase();\n}\n",
+        "src/email-display.ts": "export const emailLabel = \"email\";\nexport function displayNormalizeEmail() { return emailLabel; }\n",
+        "src/main.ts": "import { normalizeEmail } from \"./email\";\nexport const handler = normalizeEmail;\n"
+      },
+      "relevant_symbols": [
+        "normalizeEmail"
+      ],
+      "changed_paths": [
+        "src/main.ts"
+      ]
+    },
+    {
+      "id": "retry",
+      "group": "retry",
+      "split": "development",
+      "query": "Limit retry attempts",
+      "files": {
+        "src/retry.ts": "export function limitRetryAttempts(attempts: number, maximum: number) {\n  return attempts < maximum;\n}\n",
+        "src/retry-display.ts": "export const retryLabel = \"retry\";\nexport function displayLimitRetryAttempts() { return retryLabel; }\n",
+        "src/main.ts": "import { limitRetryAttempts } from \"./retry\";\nexport const handler = limitRetryAttempts;\n"
+      },
+      "relevant_symbols": [
+        "limitRetryAttempts"
+      ],
+      "changed_paths": [
+        "src/main.ts"
+      ]
+    },
+    {
+      "id": "shipping",
+      "group": "shipping",
+      "split": "test",
+      "query": "Calculate shipping cost",
+      "files": {
+        "src/shipping.ts": "export function calculateShippingCost(weight: number, rate: number) {\n  return weight * rate;\n}\n",
+        "src/shipping-display.ts": "export const shippingLabel = \"shipping\";\nexport function displayCalculateShippingCost() { return shippingLabel; }\n",
+        "src/main.ts": "import { calculateShippingCost } from \"./shipping\";\nexport const handler = calculateShippingCost;\n"
+      },
+      "relevant_symbols": [
+        "calculateShippingCost"
+      ],
+      "changed_paths": [
+        "src/main.ts"
+      ]
+    },
+    {
+      "id": "pagination",
+      "group": "pagination",
+      "split": "test",
+      "query": "Paginate search results",
+      "files": {
+        "src/pagination.ts": "export function paginateSearchResults(results: string[], offset: number, limit: number) {\n  return results.slice(offset, offset + limit);\n}\n",
+        "src/pagination-display.ts": "export const paginationLabel = \"pagination\";\nexport function displayPaginateSearchResults() { return paginationLabel; }\n",
+        "src/main.ts": "import { paginateSearchResults } from \"./pagination\";\nexport const handler = paginateSearchResults;\n"
+      },
+      "relevant_symbols": [
+        "paginateSearchResults"
+      ],
+      "changed_paths": [
+        "src/main.ts"
+      ]
+    },
+    {
+      "id": "refund",
+      "group": "refund",
+      "split": "test",
+      "query": "Refund payment amount",
+      "files": {
+        "src/refund.ts": "export function refundPaymentAmount(requested: number, paid: number) {\n  return Math.min(requested, paid);\n}\n",
+        "src/refund-display.ts": "export const refundLabel = \"refund\";\nexport function displayRefundPaymentAmount() { return refundLabel; }\n",
+        "src/main.ts": "import { refundPaymentAmount } from \"./refund\";\nexport const handler = refundPaymentAmount;\n"
+      },
+      "relevant_symbols": [
+        "refundPaymentAmount"
+      ],
+      "changed_paths": [
+        "src/main.ts"
+      ]
+    },
+    {
+      "id": "currency",
+      "group": "currency",
+      "split": "test",
+      "query": "Format currency amount",
+      "files": {
+        "src/currency.ts": "export function formatCurrencyAmount(amount: number) {\n  return amount.toFixed(2);\n}\n",
+        "src/currency-display.ts": "export const currencyLabel = \"currency\";\nexport function displayFormatCurrencyAmount() { return currencyLabel; }\n",
+        "src/main.ts": "import { formatCurrencyAmount } from \"./currency\";\nexport const handler = formatCurrencyAmount;\n"
+      },
+      "relevant_symbols": [
+        "formatCurrencyAmount"
+      ],
+      "changed_paths": [
+        "src/main.ts"
+      ]
+    }
+  ]
+}

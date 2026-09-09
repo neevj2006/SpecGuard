@@ -1,0 +1,13 @@
+{
+  "name": "specguard-workspace",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "indexing",
+    "apps/web"
+  ],
+  "scripts": {
+    "test": "node --test indexing/*.test.mjs",
+    "check": "npm test && uv run ruff check . && uv run ruff format --check . && uv run mypy services && uv run pytest"
+  }
+}

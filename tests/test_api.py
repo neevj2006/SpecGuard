@@ -1,0 +1,94 @@
+from fastapi.testclient import TestClient
+
+from services.analysis.decompose import RuleDecomposer, decompose
+from services.analysis.engine import analyze
+from services.api.main import create_app
+from services.api.store import Store
+
+
+def test_model_decomposition_requires_opt_in_and_releases_capacity(tmp_path, monkeypatch):
+    client = TestClient(create_app(tmp_path, tmp_path / "model.sqlite", "secret"))
+    client.headers["Authorization"] = "Bearer secret"
+    monkeypatch.delenv("SPECGUARD_MODEL", raising=False)
+    for _ in range(3):
+        assert (
+            client.post(
+                "/v1/criteria", json={"text": "Save receipts", "use_model": True}
+            ).status_code
+            == 422
+        )
+    calls = []
+
+    def propose(self, text):
+        calls.append(text)
+        return RuleDecomposer().decompose(text)
+
+    monkeypatch.setenv("SPECGUARD_MODEL", "test-model")
+    monkeypatch.setenv("SPECGUARD_MODEL_KEY", "test-key")
+    monkeypatch.setattr("services.api.main.ModelDecomposer.decompose", propose)
+    assert client.post("/v1/criteria", json={"text": "Save receipts"}).status_code == 200
+    assert calls == []
+    assert (
+        client.post("/v1/criteria", json={"text": "Save receipts", "use_model": True}).status_code
+        == 200
+    )
+    assert calls == ["Save receipts"]
+
+
+def test_decomposition_exposes_review_context_and_version(tmp_path):
+    client = TestClient(create_app(tmp_path, tmp_path / "criteria.sqlite", "secret"))
+    client.headers["Authorization"] = "Bearer secret"
+    response = client.post("/v1/criteria", json={"text": "For admins:\n- Export receipts"})
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["context"] == "For admins:"
+    assert payload["version"] == "explicit-lists/3"
+    assert payload["questions"]
+    assert payload["criteria"][0]["source_text"] == "Export receipts"
+    assert client.post("/v1/criteria", json={"text": "   "}).status_code == 422
+
+
+def test_authenticated_lifecycle(repository, tmp_path):
+    repo, base, head = repository
+    app = create_app(repo, tmp_path / "data.sqlite", "secret")
+    client = TestClient(app)
+    assert client.get("/health").status_code == 200
+    assert client.get("/v1/runs").status_code == 401
+    client.headers["Authorization"] = "Bearer secret"
+    criteria = client.post("/v1/criteria", json={"text": "Apply discount"}).json()["criteria"]
+    body = {
+        "repository": ".",
+        "base": base,
+        "head": head,
+        "requirement": "Apply discount",
+        "criteria": criteria,
+    }
+    response = client.post("/v1/runs", json=body)
+    assert response.status_code == 201, response.text
+    identifier = response.json()["id"]
+    assert client.post("/v1/runs", json=body).json()["id"] == identifier
+    assert len(client.get("/v1/runs").json()) == 1
+    assert (
+        client.post(
+            f"/v1/runs/{identifier}/feedback",
+            json={"criterion_id": criteria[0]["id"], "note": "Needs review"},
+        ).status_code
+        == 204
+    )
+    assert client.delete(f"/v1/runs/{identifier}").status_code == 204
+    assert client.get(f"/v1/runs/{identifier}").status_code == 404
+    body["repository"] = "../outside"
+    assert client.post("/v1/runs", json=body).status_code == 404
+
+
+def test_tenant_isolation(repository, tmp_path):
+    repo, base, head = repository
+    store = Store(tmp_path / "store.sqlite")
+    run = analyze(repo, base, head, "discount", decompose("discount"))
+    store.save("alice", run)
+    assert store.list("bob") == []
+    import pytest
+
+    with pytest.raises(KeyError):
+        store.delete("bob", run.id)
+    assert store.get("alice", run.id).id == run.id
