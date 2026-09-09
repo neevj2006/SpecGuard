@@ -8,7 +8,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.responses import JSONResponse
 from pydantic import Field
 
-from services.analysis.decompose import decompose
+from services.analysis.decompose import Decomposition, RuleDecomposer
 from services.analysis.domain import Contract, Criterion
 from services.analysis.engine import analyze
 from services.analysis.verifier import ModelVerifier
@@ -81,14 +81,10 @@ def create_app(
     def health():
         return {"status": "ok", "version": "0.1.0"}
 
-    @app.post("/v1/criteria")
+    @app.post("/v1/criteria", response_model=Decomposition)
     def criteria(body: RequirementInput, owner: str = Depends(authorize)):
         try:
-            return {
-                "criteria": decompose(body.text),
-                "assumptions": [],
-                "questions": ["Review compound or ambiguous criteria before analysis."],
-            }
+            return RuleDecomposer().decompose(body.text)
         except ValueError as error:
             raise HTTPException(422, str(error)) from error
 

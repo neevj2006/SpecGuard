@@ -6,6 +6,19 @@ from services.api.main import create_app
 from services.api.store import Store
 
 
+def test_decomposition_exposes_review_context_and_version(tmp_path):
+    client = TestClient(create_app(tmp_path, tmp_path / "criteria.sqlite", "secret"))
+    client.headers["Authorization"] = "Bearer secret"
+    response = client.post("/v1/criteria", json={"text": "For admins:\n- Export receipts"})
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["context"] == "For admins:"
+    assert payload["version"] == "explicit-lists/3"
+    assert payload["questions"]
+    assert payload["criteria"][0]["source_text"] == "Export receipts"
+    assert client.post("/v1/criteria", json={"text": "   "}).status_code == 422
+
+
 def test_authenticated_lifecycle(repository, tmp_path):
     repo, base, head = repository
     app = create_app(repo, tmp_path / "data.sqlite", "secret")
