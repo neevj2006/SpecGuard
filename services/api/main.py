@@ -83,6 +83,27 @@ def create_app(
     def health():
         return {"status": "ok", "version": "0.1.0"}
 
+    @app.get("/v1/readiness")
+    def readiness(owner: str = Depends(authorize)):
+        key_path = os.environ.get("SPECGUARD_GITHUB_PRIVATE_KEY_FILE", "")
+        try:
+            key_present = bool(key_path) and Path(key_path).is_file()
+        except (OSError, ValueError):
+            key_present = False
+        checks = {
+            "model_identifier": bool(os.environ.get("SPECGUARD_MODEL", "").strip()),
+            "model_credential": bool(os.environ.get("SPECGUARD_MODEL_KEY", "").strip()),
+            "github_app_id": bool(os.environ.get("SPECGUARD_GITHUB_APP_ID", "").strip()),
+            "github_key_file_present": key_present,
+            "github_installation_assigned": bool(store.installation_ids(owner)),
+            "webhook_secret": bool(os.environ.get("SPECGUARD_GITHUB_WEBHOOK_SECRET", "").strip()),
+        }
+        return {
+            "scope": "configuration_only",
+            "checks": checks,
+            "external_services_verified": False,
+        }
+
     @app.post("/v1/criteria", response_model=Decomposition)
     def criteria(body: RequirementInput, owner: str = Depends(authorize)):
         if body.use_model and not slots.acquire(blocking=False):

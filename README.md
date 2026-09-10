@@ -51,6 +51,8 @@ On macOS/Linux, use `export SPECGUARD_REPOSITORY_ROOT="$PWD/.specguard"` and `ex
 
 Both servers are intended to run on loopback. This preview is not a public multi-user deployment. A single configured API token identifies the local workspace. Set `SPECGUARD_OWNER_ID` to a stable workspace identifier before creating runs to preserve ownership when rotating the token. Without it, ownership is derived from the token for backward compatibility.
 
+Authenticated `GET /v1/readiness` reports configuration-presence checks for the model identifier/credential, GitHub App ID/key file, the caller's installation assignment, and webhook secret. It returns booleans only, without credentials or paths. This is a configuration check: key validity, file readability, provider access, billing, and external service health are not verified. Webhook configuration is separate from manual analysis.
+
 ## Review workflow
 
 1. Select a local repository and committed base/head revisions.
