@@ -13,6 +13,7 @@ from services.analysis.domain import Contract, Criterion
 from services.analysis.engine import analyze
 from services.analysis.model_decompose import ModelDecomposer
 from services.analysis.verifier import ModelVerifier
+from services.api.observability import RequestMetrics, RequestObservability
 from services.api.store import Store
 from services.integrations.github import GitHubError
 from services.integrations.routes import github_router
@@ -52,6 +53,8 @@ def create_app(
     )
     token = token if token is not None else os.environ.get("SPECGUARD_API_TOKEN", "")
     app = FastAPI(title="SpecGuard", version="0.1.0")
+    request_metrics = RequestMetrics()
+    app.add_middleware(RequestObservability, metrics=request_metrics)
     slots = threading.BoundedSemaphore(2)
 
     def authorize(authorization: str = Header(default="")) -> str:
@@ -82,6 +85,10 @@ def create_app(
     @app.get("/health")
     def health():
         return {"status": "ok", "version": "0.1.0"}
+
+    @app.get("/v1/metrics")
+    def metrics(owner: str = Depends(authorize)):
+        return request_metrics.snapshot()
 
     @app.get("/v1/readiness")
     def readiness(owner: str = Depends(authorize)):
