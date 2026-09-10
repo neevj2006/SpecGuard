@@ -9,6 +9,7 @@ from pydantic import Field, model_validator
 
 from services.analysis.domain import Contract
 from services.analysis.graph import neighbors
+from services.analysis.hybrid import HybridRetriever, document_text, text_key
 from services.analysis.repository import parse_sources
 from services.analysis.retrieval import rank, ranking_metrics
 
@@ -47,7 +48,13 @@ class FixtureBenchmark(Contract):
         return self
 
 
-def evaluate(benchmark: FixtureBenchmark, k: int = 3) -> dict:
+def evaluate(
+    benchmark: FixtureBenchmark,
+    k: int = 3,
+    *,
+    hybrid: HybridRetriever | None = None,
+    embedding_inputs: dict[str, str] | None = None,
+) -> dict:
     if not 1 <= k <= 100:
         raise ValueError("K must be between 1 and 100")
     rows: list[dict] = []
@@ -62,16 +69,24 @@ def evaluate(benchmark: FixtureBenchmark, k: int = 3) -> dict:
             [],
         )
         relevant = {chunk.id for chunk in index["chunks"] if chunk.symbol in case.relevant_symbols}
+        if embedding_inputs is not None:
+            for text in [case.query, *[document_text(c) for c in index["chunks"]]]:
+                embedding_inputs[text_key(text)] = text
         found = {chunk.symbol for chunk in index["chunks"]}
         if not set(case.relevant_symbols) <= found:
             raise ValueError(f"Case {case.id} labels missing symbols")
         adjacent = neighbors(index["imports"], set(case.changed_paths))
         ablations = {}
-        for name, neighborhood in [
-            ("bm25_with_boosts", set()),
-            ("with_import_neighbors", adjacent),
-        ]:
-            retrieved = rank(case.query, index["chunks"], k, neighbor_paths=neighborhood)
+        rankings = {
+            "bm25_with_boosts": rank(case.query, index["chunks"], k),
+            "with_import_neighbors": rank(case.query, index["chunks"], k, neighbor_paths=adjacent),
+        }
+        if hybrid:
+            rankings["dense"] = hybrid.dense(case.query, index["chunks"], k)
+            rankings["hybrid_rrf"] = hybrid.rank(
+                case.query, index["chunks"], k, neighbor_paths=adjacent
+            )
+        for name, retrieved in rankings.items():
             ablations[name] = {
                 **ranking_metrics(relevant, [chunk.id for chunk in retrieved], k),
                 "ranking": [
@@ -101,11 +116,24 @@ def evaluate(benchmark: FixtureBenchmark, k: int = 3) -> dict:
                 )
                 for metric in ("recall", "mrr", "ndcg")
             }
-            for name in ("bm25_with_boosts", "with_import_neighbors")
+            for name in rows[0]["ablations"]
         }
     return {
         "benchmark_version": benchmark.version,
         "retriever": "bm25/2",
+        "embedding_experiment": {
+            "version": hybrid.version,
+            "model": hybrid.bundle.model,
+            "revision": hybrid.bundle.revision,
+            "dimensions": hybrid.bundle.dimensions,
+            "window": hybrid.window,
+            "rrf_k": hybrid.rrf_k,
+            "bundle_sha256": hashlib.sha256(
+                json.dumps(hybrid.bundle.model_dump(), sort_keys=True).encode()
+            ).hexdigest(),
+        }
+        if hybrid
+        else None,
         "k": k,
         "origin": benchmark.origin,
         "annotation_status": benchmark.annotation_status,

@@ -147,9 +147,24 @@ The checks cover formatting, Python lint/type checking, AST spans, retrieval met
 
 Reproduce the synthetic retrieval regression benchmark with `uv run python scripts/evaluate.py`. The report is written to `.specguard/retrieval-report.json`. Ten MIT-licensed toy cases are separated into six development and four test groups, with no group shared between splits. Both ranking variants achieve Recall@3 of 1.0 on these fixtures; import-neighbor boosts improve the four-case test MRR from 0.625 to 1.0. These deliberately small fixtures test ranking mechanics, not general retrieval quality. They are not human-adjudicated and do not measure verdict correctness, calibration, or reviewer time.
 
+### Offline hybrid retrieval experiments
+
+The evaluation CLI can compare both sparse baselines with cosine-similarity retrieval and reciprocal-rank fusion (RRF). Production analysis still uses BM25. Export the exact queries and source documents for an embedding model you run separately:
+
+```sh
+uv run python scripts/evaluate.py --export-inputs .specguard/embedding-inputs.json
+uv run python scripts/evaluate.py --embeddings .specguard/vectors.json --window 50 --rrf-k 60 --output .specguard/hybrid-report.json
+```
+
+The input export maps SHA-256 keys to UTF-8 texts. Encode each text with the same model and pinned revision, retaining its key. Supply a JSON bundle with `model`, `revision`, `dimensions`, and `vectors` (a mapping from those keys to numeric arrays). Document text is exactly `path + "\n" + symbol + "\n" + quote`; query text is unchanged. Hashes prevent reuse for changed text. Exports contain source code: keep them local unless you explicitly choose a provider. No embedding service is called by these commands.
+
+Bundles must contain finite, nonzero, equal-dimensional vectors. Missing inputs fail explicitly. The CLI caps bundles at 20 MB. Dense ranking includes positive cosine scores only; fusion gives each ranking a contribution of `1 / (rrf_k + rank)` within the candidate window. Ties are deterministic, and original source citations are preserved. Reports retain split-level Recall@K, MRR and nDCG, per-case rankings, fusion contributions, model/revision, parameters, and a bundle fingerprint.
+
+Choose model and fusion parameters using development cases, then evaluate the frozen test split. The supplied tests use explicitly synthetic vectors to verify mechanics; they do not establish learned-model quality. Encoding, training, reranking, and a human-reviewed semantic benchmark remain separate work.
+
 - GitHub operations have offline contract coverage; live credentials, installation configuration, and end-to-end provider validation are still required. OAuth self-service is not included.
 - The default verifier always abstains. Model-backed verdicts have contract tests but no live-provider evaluation yet.
-- Retrieval is BM25 with explicit boosts. Learned embeddings, reranking, fine-tuning, and a human-adjudicated benchmark are not included yet. Metric functions are tested; no retrieval-quality or reviewer-time claims are made.
+- Production retrieval is BM25 with explicit boosts. Offline vector-bundle experiments support dense retrieval and hybrid fusion; a bundled learned encoder, reranking, fine-tuning, and a human-adjudicated benchmark are not included yet. Metric functions are tested; no general retrieval-quality or reviewer-time claims are made.
 - Unambiguous relative import paths are resolved. Package exports, aliases, dynamic imports, and runtime call graphs remain unresolved; the neighborhood is a syntactic approximation.
 - Deleted source is absent from the head index, and no negative verdict is inferred from its absence. Oversized repositories can omit useful supporting context.
 - SQLite and PostgreSQL persistence are implemented. Public multi-user authentication, pgvector, deployment, scheduled retention, and operational monitoring remain pending.
