@@ -151,6 +151,8 @@ Reproduce the synthetic retrieval regression benchmark with `uv run python scrip
 
 ### Verdict evaluation against reviewed labels
 
+Prepare an unreviewed template with `uv run python scripts/prepare_labels.py run.json --group owner/repository --output labels.json`. It accepts a raw saved run or API export and refuses to overwrite an existing file. Fill in the split, expected verdict, reviewer, origin, license, and annotation status; mark each citation `true`/`false` or remove it if unjudged. The draft deliberately fails evaluation until completed. Model predictions remain in the saved run for comparison but are never copied into reference labels; feedback notes are excluded. Use one stable repository group across cases, and combine completed runs/labels into one manifest for aggregate evaluation.
+
 Run `uv run python scripts/evaluate_verdicts.py labels.json --output .specguard/verdict-report.json` to evaluate saved results without calling a model. The manifest contains `version`, `annotation_status` (`synthetic`, `human_reviewed`, or `human_adjudicated`), `runs` (full exported `AnalysisRun` objects), and `labels`. For API exports, use the `run` object inside each export. Each label requires:
 
 ```json
