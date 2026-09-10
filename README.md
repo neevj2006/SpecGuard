@@ -165,6 +165,23 @@ Reports contain a confusion matrix (expected rows, predicted columns), per-class
 
 The 20 MB input limit bounds CLI manifests. Reports include an input fingerprint and omit requirement text, citations, and reviewer identities. Source-bearing manifests should remain private. The metric tests use synthetic labels with hand-calculated expected values; no human-reviewed verdict benchmark or real-world accuracy result is bundled. Choose thresholds on development data before inspecting test results.
 
+### Independent review and adjudication
+
+Two completed label manifests can be compared before settling on final reference labels:
+
+```sh
+uv run python scripts/compare_reviews.py reviewer-a.json reviewer-b.json --output agreement.json
+uv run python scripts/compare_reviews.py reviewer-a.json reviewer-b.json --template --output decisions.json
+uv run python scripts/compare_reviews.py reviewer-a.json reviewer-b.json --decisions decisions.json --output adjudicated.json
+uv run python scripts/evaluate_verdicts.py adjudicated.json
+```
+
+The first command reports per-split verdict agreement, unweighted Cohen's kappa, citation agreement among jointly judged citations, and a disagreement queue identified by run/criterion IDs. Missing citation judgments are counted separately and never treated as negative judgments. Perfect single-class agreement yields `null` kappa because chance agreement is also one. Agreement is not accuracy, and the tool cannot establish reviewer independence beyond checking distinct identifiers.
+
+Both reviews must cover exactly the same runs, criteria, evidence, repository groups, splits, origins, and licenses. Saved-run creation timestamps may differ; source and prediction contents must match. Reports omit source text and reviewer names, but identifiers and review decisions can still be sensitive. Keep source-bearing input manifests private.
+
+The template binds both input files with fingerprints and leaves every final verdict and adjudicator identifier blank, including cases where reviewers agree. Fill every decision, choose `synthetic` or `human_adjudicated` annotation status, and add explicit citation judgments where reviewed; omitted judgments remain unknown. The apply command rejects stale inputs, missing/duplicate decisions, changed provenance, or promotion of synthetic inputs to human adjudication. The final manifest is directly accepted by the verdict evaluator. Input files are limited to 20 MB each and output files must be new, so existing review work is not overwritten.
+
 ### Offline hybrid retrieval experiments
 
 The evaluation CLI can compare both sparse baselines with cosine-similarity retrieval and reciprocal-rank fusion (RRF). Production analysis still uses BM25. Export the exact queries and source documents for an embedding model you run separately:
