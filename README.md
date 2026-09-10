@@ -53,6 +53,10 @@ Both servers are intended to run on loopback. This preview is not a public multi
 
 Authenticated `GET /v1/readiness` reports configuration-presence checks for the model identifier/credential, GitHub App ID/key file, the caller's installation assignment, and webhook secret. It returns booleans only, without credentials or paths. This is a configuration check: key validity, file readability, provider access, billing, and external service health are not verified. Webhook configuration is separate from manual analysis.
 
+Authenticated `GET /v1/metrics` returns process-local request counts, server-error counts, and mean/max elapsed milliseconds grouped by HTTP method, route template, and status class. Unknown paths share one bucket; excess groups share an overflow bucket. Counters reset on restart and are not aggregated across workers. This local-workspace endpoint is not a multi-tenant metrics service.
+
+Responses passing through the request middleware include a generated `X-Request-ID`; incoming IDs are ignored. Enable the `specguard.requests` logger at INFO through your Python/Uvicorn logging configuration for JSON completion records. They contain the generated ID, method, route template, status, duration, and failure flag, without bodies, queries, raw paths, headers, or exception text. These controls apply to SpecGuard's logger only: Uvicorn/proxy logs require separate configuration (`--no-access-log` disables Uvicorn access logs). Unhandled failures outside response middleware may lack the response header but still receive a completion record. Timing covers the ASGI request lifecycle, not separate indexing/retrieval/model stages.
+
 ## Review workflow
 
 1. Select a local repository and committed base/head revisions.
