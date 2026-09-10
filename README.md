@@ -149,6 +149,20 @@ The checks cover formatting, Python lint/type checking, AST spans, retrieval met
 
 Reproduce the synthetic retrieval regression benchmark with `uv run python scripts/evaluate.py`. The report is written to `.specguard/retrieval-report.json`. Ten MIT-licensed toy cases are separated into six development and four test groups, with no group shared between splits. Both ranking variants achieve Recall@3 of 1.0 on these fixtures; import-neighbor boosts improve the four-case test MRR from 0.625 to 1.0. These deliberately small fixtures test ranking mechanics, not general retrieval quality. They are not human-adjudicated and do not measure verdict correctness, calibration, or reviewer time.
 
+### Verdict evaluation against reviewed labels
+
+Run `uv run python scripts/evaluate_verdicts.py labels.json --output .specguard/verdict-report.json` to evaluate saved results without calling a model. The manifest contains `version`, `annotation_status` (`synthetic`, `human_reviewed`, or `human_adjudicated`), `runs` (full exported `AnalysisRun` objects), and `labels`. For API exports, use the `run` object inside each export. Each label requires:
+
+```json
+{"run_id":"saved-run-id","criterion_id":"saved-criterion-id","group":"repository-identity","split":"test","expected":"satisfied","reviewer":"reviewer-id","source":"case-origin","license":"MIT","citation_correctness":{"evidence-id":true}}
+```
+
+Use the actual case license and origin. Supply exactly one final label per saved criterion; reconcile multiple reviewers separately before declaring adjudication. Keep all cases from the same repository group in one split (`development` or `test`). Citation judgments are optional, must refer to the result's evidence IDs, and mean that a reviewer checked whether that citation supports the associated verdict. Omitted judgments remain unknown, not correct. Annotation status and reviewer provenance are declarations, not automatically certified facts.
+
+Reports contain a confusion matrix (expected rows, predicted columns), per-class precision/recall/F1, four-class macro-F1, accuracy, non-abstaining answer coverage/risk, citation correctness and judgment coverage, and confidence-threshold coverage/risk. Undefined ratios are `null`; undefined class F1 contributes zero to macro-F1. Threshold curves exclude abstentions and answers without confidence; the missing-confidence count is explicit. These curves measure observed error, not calibration. Run duration, known token/cost totals, and missing-usage counts are reported separately for each split.
+
+The 20 MB input limit bounds CLI manifests. Reports include an input fingerprint and omit requirement text, citations, and reviewer identities. Source-bearing manifests should remain private. The metric tests use synthetic labels with hand-calculated expected values; no human-reviewed verdict benchmark or real-world accuracy result is bundled. Choose thresholds on development data before inspecting test results.
+
 ### Offline hybrid retrieval experiments
 
 The evaluation CLI can compare both sparse baselines with cosine-similarity retrieval and reciprocal-rank fusion (RRF). Production analysis still uses BM25. Export the exact queries and source documents for an embedding model you run separately:
