@@ -199,7 +199,27 @@ The input export maps SHA-256 keys to UTF-8 texts. Encode each text with the sam
 
 Bundles must contain finite, nonzero, equal-dimensional vectors. Missing inputs fail explicitly. The CLI caps bundles at 20 MB. Dense ranking includes positive cosine scores only; fusion gives each ranking a contribution of `1 / (rrf_k + rank)` within the candidate window. Ties are deterministic, and original source citations are preserved. Reports retain split-level Recall@K, MRR and nDCG, per-case rankings, fusion contributions, model/revision, parameters, and a bundle fingerprint.
 
-Choose model and fusion parameters using development cases, then evaluate the frozen test split. The supplied tests use explicitly synthetic vectors to verify mechanics; they do not establish learned-model quality. Encoding, training, reranking, and a human-reviewed semantic benchmark remain separate work.
+### Generate embeddings with a local model
+
+`scripts/embed_inputs.py` bridges the exported texts and vector bundles using an optional [Sentence Transformers runtime](https://www.sbert.net/docs/package_reference/sentence_transformer/model.html). Supply a trusted, already downloaded Sentence Transformer model directory with safetensors weights. The script never downloads a model; loading uses local files only, remote code is disabled, and inference runs on CPU. Local models are trusted application inputs, not sandboxed code.
+
+```sh
+uv run python scripts/evaluate.py --export-inputs .specguard/embedding-inputs.json
+uv run --with sentence-transformers python scripts/embed_inputs.py .specguard/embedding-inputs.json --model-dir /path/to/local/model --model your-model-name --output .specguard/vectors.json --cache .specguard/vector-cache.json --report .specguard/embedding-report.json
+uv run python scripts/evaluate.py --embeddings .specguard/vectors.json --output .specguard/hybrid-report.json
+```
+
+The optional `--with` dependency is not installed for normal app operation or CI. For repeatable experiments pin its version in the invocation (`--with sentence-transformers==YOUR_VERSION`) and retain the environment's dependency versions. Review the model's license separately before using or redistributing it; naming a model is not a license check. No model or weights are bundled here.
+
+Model identity combines all local model-file contents and relative names, the Sentence Transformers/Transformers/PyTorch runtime versions, and the maximum token length. The report records runtime versions, dimension, elapsed time, batch count and cache hits without input text. Changed model files invalidate the identity; a second fingerprint check rejects publication if files changed during generation. Keep the model directory unchanged and put outputs elsewhere.
+
+Inputs must retain their exact SHA-256 keys. Encoding uses the same plain-text mode for documents and queries with no implicit model prompt. Models requiring distinct query/document prompts need a separate adapter. Inputs exceeding the model's token limit are rejected before encoding rather than silently truncated; use a suitable longer-context encoder or revise the experiment's source chunks. Batch size defaults to 16 and accepts 1–128.
+
+Validated batches are checkpointed to an optional cache. A retry reuses matching input hashes for the same model identity; mismatched model/revision/dimensions fail explicitly. Only inputs requested by the current job are retained when a new batch is checkpointed. Use one writer per cache. The cache stores vectors, not plaintext, but embeddings may still encode sensitive information and should remain private. Remove the cache and exports when retiring the experiment.
+
+Output and report paths must be new, distinct from inputs/cache, and outside the model directory. Complete JSON is published atomically; interrupted batches cannot replace a valid cache with partial JSON. The output bundle is published before the optional report, so a report-write failure can leave a valid bundle. Each artifact is bounded to 20 MB; dimensions are limited to 4096 and inputs to 20,000. The automated tests use synthetic encoders and a mocked local-runtime contract; real-model installation, execution and quality evaluation remain to be performed.
+
+Choose model and fusion parameters using development cases, then evaluate the frozen test split. The supplied tests use explicitly synthetic vectors to verify mechanics; they do not establish learned-model quality. Real-model evaluation, training, reranking, and a human-reviewed semantic benchmark remain separate work.
 
 - GitHub operations have offline contract coverage; live credentials, installation configuration, and end-to-end provider validation are still required. OAuth self-service is not included.
 - The default verifier always abstains. Model-backed verdicts have contract tests but no live-provider evaluation yet.
