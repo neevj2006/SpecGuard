@@ -199,6 +199,10 @@ The input export maps SHA-256 keys to UTF-8 texts. Encode each text with the sam
 
 Bundles must contain finite, nonzero, equal-dimensional vectors. Missing inputs fail explicitly. The CLI caps bundles at 20 MB. Dense ranking includes positive cosine scores only; fusion gives each ranking a contribution of `1 / (rrf_k + rank)` within the candidate window. Ties are deterministic, and original source citations are preserved. Reports retain split-level Recall@K, MRR and nDCG, per-case rankings, fusion contributions, model/revision, parameters, and a bundle fingerprint.
 
+The retrieval evaluator requires new report and input-export paths. For a rerun, pass a fresh `--output` path and, when exporting, a fresh `--export-inputs` path; existing artifacts are never overwritten. Manifest, vector bundle, report and export paths must be distinct, and output paths cannot contain one another.
+
+Manifest and vector inputs use strict JSON validation with a 20 MB limit. Invalid options, missing vectors and malformed inputs fail without publishing results. Each output is written atomically; the input export is published before the report, so a late report-write failure can leave a complete export. The two outputs are not a single transaction. Errors omit input contents and internal exception details.
+
 ### Compare retrieval methods
 
 Embedding input, cache and comparison-report readers reject duplicate JSON keys (including escaped aliases), non-finite numbers and excessive nesting. Artifact writers reject non-finite numbers before touching existing output files.
