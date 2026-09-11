@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import math
 import os
 import tempfile
 from pathlib import Path
@@ -11,12 +12,40 @@ from services.analysis.hybrid import text_key
 MAX_BYTES = 20_000_000
 
 
+def _unique_object(pairs: list[tuple[str, object]]) -> dict:
+    result: dict = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("Duplicate JSON object keys are not supported")
+        result[key] = value
+    return result
+
+
+def _reject_constant(value: str):
+    raise ValueError("Non-finite JSON constants are not supported")
+
+
+def _finite_float(value: str) -> float:
+    number = float(value)
+    if not math.isfinite(number):
+        raise ValueError("JSON number exceeds finite float range")
+    return number
+
+
 def read_json(path: Path):
     with path.open("rb") as source:
         content = source.read(MAX_BYTES + 1)
     if len(content) > MAX_BYTES:
         raise ValueError("Embedding artifact exceeds 20 MB")
-    return json.loads(content)
+    try:
+        return json.loads(
+            content,
+            object_pairs_hook=_unique_object,
+            parse_constant=_reject_constant,
+            parse_float=_finite_float,
+        )
+    except RecursionError as error:
+        raise ValueError("JSON artifact nesting is too deep") from error
 
 
 def validate_inputs(payload: object) -> dict[str, str]:
@@ -57,7 +86,7 @@ def model_fingerprint(directory: Path) -> str:
 
 
 def write_json(path: Path, payload: dict, *, replace: bool = False):
-    content = (json.dumps(payload, sort_keys=True) + "\n").encode("utf-8")
+    content = (json.dumps(payload, sort_keys=True, allow_nan=False) + "\n").encode("utf-8")
     if len(content) > MAX_BYTES:
         raise ValueError("Generated embedding artifact exceeds 20 MB")
     path.parent.mkdir(parents=True, exist_ok=True)

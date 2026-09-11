@@ -155,3 +155,20 @@ def test_cli_consumes_evaluator_report_and_preserves_existing_files(tmp_path, mo
         main()
     assert not output.exists()
     assert "private invalid report" not in capsys.readouterr().err
+
+
+def test_cli_rejects_ambiguous_json_before_comparing(tmp_path, monkeypatch, capsys):
+    source, output = tmp_path / "input.json", tmp_path / "output.json"
+    source.write_text('{"private-key":1,"private-key":2}', encoding="utf-8")
+    monkeypatch.setattr(sys, "argv", ["compare_retrieval", str(source), "--output", str(output)])
+
+    def unexpected_comparison(*args, **kwargs):
+        pytest.fail("Ambiguous JSON reached the comparison engine")
+
+    monkeypatch.setattr("scripts.compare_retrieval.compare_retrieval", unexpected_comparison)
+    with pytest.raises(SystemExit) as failure:
+        main()
+    assert failure.value.code == 2
+    assert not output.exists()
+    captured = capsys.readouterr()
+    assert captured.out == "" and "private-key" not in captured.err

@@ -201,6 +201,8 @@ Bundles must contain finite, nonzero, equal-dimensional vectors. Missing inputs 
 
 ### Compare retrieval methods
 
+Embedding input, cache and comparison-report readers reject duplicate JSON keys (including escaped aliases), non-finite numbers and excessive nesting. Artifact writers reject non-finite numbers before touching existing output files.
+
 After generating a retrieval report, compare two methods on its paired cases:
 
 ```sh
