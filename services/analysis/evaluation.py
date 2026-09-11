@@ -102,6 +102,7 @@ def evaluate(
         rows.append(
             {
                 "id": case.id,
+                "group": case.group,
                 "split": case.split,
                 "ablations": ablations,
                 "duration_ms": round((time.perf_counter() - started) * 1000),

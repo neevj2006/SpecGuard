@@ -199,6 +199,20 @@ The input export maps SHA-256 keys to UTF-8 texts. Encode each text with the sam
 
 Bundles must contain finite, nonzero, equal-dimensional vectors. Missing inputs fail explicitly. The CLI caps bundles at 20 MB. Dense ranking includes positive cosine scores only; fusion gives each ranking a contribution of `1 / (rrf_k + rank)` within the candidate window. Ties are deterministic, and original source citations are preserved. Reports retain split-level Recall@K, MRR and nDCG, per-case rankings, fusion contributions, model/revision, parameters, and a bundle fingerprint.
 
+### Compare retrieval methods
+
+After generating a retrieval report, compare two methods on its paired cases:
+
+```sh
+uv run python scripts/compare_retrieval.py .specguard/hybrid-report.json --candidate hybrid_rrf --output .specguard/comparison.json --samples 2000 --seed 0
+```
+
+The baseline defaults to `bm25_with_boosts`. Use `--candidate with_import_neighbors` to compare the offline heuristic methods without embeddings. Regenerate older reports that lack repository-group identifiers. Input is limited to 20 MB and 100 cases; output must be a new file.
+
+Each split reports Recall@K, MRR and nDCG changes, group wins/ties/regressions, and paired percentile bootstrap intervals. Cases are averaged within repository groups, then groups receive equal weight, so these means can differ from the evaluator's case-weighted aggregates. The same sampled groups are used for both methods and all metrics. Seed, sample count, confidence level and a fingerprint of the paired measurements are retained; rankings and source text are omitted.
+
+`--confidence` defaults to 0.95 (range 0.5?0.99); sample count accepts 100?10,000. A split with one group reports no interval. Small group counts make intervals unstable, even when a constant difference produces a zero-width interval. This follows the [paired percentile bootstrap procedure](https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.bootstrap.html) applied to group means. It measures variability across these synthetic groups, not repeated model-run variance or real-repository performance. It does not perform significance testing, correct for multiple comparisons, or automatically select a model. Tune on development data before inspecting the test split.
+
 ### Generate embeddings with a local model
 
 `scripts/embed_inputs.py` bridges the exported texts and vector bundles using an optional [Sentence Transformers runtime](https://www.sbert.net/docs/package_reference/sentence_transformer/model.html). Supply a trusted, already downloaded Sentence Transformer model directory with safetensors weights. The script never downloads a model; loading uses local files only, remote code is disabled, and inference runs on CPU. Local models are trusted application inputs, not sandboxed code.
