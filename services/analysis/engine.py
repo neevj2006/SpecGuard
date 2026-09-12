@@ -2,9 +2,10 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
-from services.analysis.decompose import decompose
+from services.analysis.analysis_retrieval import prepare_hybrid, review_criteria
 from services.analysis.domain import AnalysisRun, Criterion, stable_id
 from services.analysis.graph import neighbors
+from services.analysis.hybrid import HybridRetriever
 from services.analysis.repository import index_change, validate_citation
 from services.analysis.retrieval import rank
 from services.analysis.verifier import BaselineVerifier, Verifier
@@ -18,6 +19,8 @@ def analyze(
     criteria: list[Criterion] | None = None,
     verifier: Verifier | None = None,
     lookup: Callable[[str], AnalysisRun] | None = None,
+    *,
+    hybrid: HybridRetriever | None = None,
 ) -> AnalysisRun:
     started = time.perf_counter()
     index = index_change(repo, base, head)
@@ -30,6 +33,7 @@ def analyze(
         verifier,
         lookup,
         started_at=started,
+        hybrid=hybrid,
     )
 
 
@@ -43,12 +47,11 @@ def analyze_index(
     lookup: Callable[[str], AnalysisRun] | None = None,
     *,
     started_at: float | None = None,
+    hybrid: HybridRetriever | None = None,
 ) -> AnalysisRun:
     started = time.perf_counter()
     total_started = started if started_at is None else started_at
-    criteria = criteria if criteria is not None else decompose(requirement)
-    if not 1 <= len(criteria) <= 50 or len({c.id for c in criteria}) != len(criteria):
-        raise ValueError("Supply 1–50 uniquely identified criteria")
+    criteria = review_criteria(requirement, criteria)
     verifier = verifier or BaselineVerifier()
     versions = {
         "parser": index["parser_version"],
@@ -58,6 +61,9 @@ def analyze_index(
         "prompt": "1",
         "model": getattr(verifier, "model", "none"),
     }
+    if hybrid is not None:
+        hybrid, retrieval_versions = prepare_hybrid(hybrid, index, criteria)
+        versions.update(retrieval_versions)
     identity = f"{identity_scope}:{index['base_sha']}:{index['head_sha']}:{requirement}:{[c.model_dump() for c in criteria]}:{versions}"
     run_id = stable_id(identity)
     if lookup:
@@ -70,7 +76,8 @@ def analyze_index(
         index.get("imports", []), {chunk.path for chunk in index["chunks"] if chunk.changed}
     )
     for criterion in criteria:
-        candidates = rank(criterion.text, index["chunks"], neighbor_paths=neighbor_paths)
+        retrieve = hybrid.rank if hybrid is not None else rank
+        candidates = retrieve(criterion.text, index["chunks"], neighbor_paths=neighbor_paths)
         if time.perf_counter() - started > 45:
             result = BaselineVerifier().verify(criterion, candidates)
             result.uncertainty = (

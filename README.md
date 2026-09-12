@@ -186,9 +186,27 @@ Both reviews must cover exactly the same runs, criteria, evidence, repository gr
 
 The template binds both input files with fingerprints and leaves every final verdict and adjudicator identifier blank, including cases where reviewers agree. Fill every decision, choose `synthetic` or `human_adjudicated` annotation status, and add explicit citation judgments where reviewed; omitted judgments remain unknown. The apply command rejects stale inputs, missing/duplicate decisions, changed provenance, or promotion of synthetic inputs to human adjudication. The final manifest is directly accepted by the verdict evaluator. Input files are limited to 20 MB each and output files must be new, so existing review work is not overwritten.
 
+### Hybrid retrieval for local analysis
+
+Hybrid retrieval is opt-in for committed local changes. First review your criteria, then export the exact texts used by the analysis engine, encode them with a trusted local model, and supply the resulting bundle:
+
+```sh
+uv run specguard export-inputs /path/to/repo --base BASE_SHA --head HEAD_SHA --requirement requirement.txt --criteria criteria.json --output .specguard/review-inputs.json
+uv run --with sentence-transformers python scripts/embed_inputs.py .specguard/review-inputs.json --model-dir /path/to/local/model --model your-model --output .specguard/review-vectors.json
+uv run specguard analyze /path/to/repo --base BASE_SHA --head HEAD_SHA --requirement requirement.txt --criteria criteria.json --embeddings .specguard/review-vectors.json --json
+```
+
+Use the same resolved commits and edited criteria for export and analysis. `--criteria` is optional in both commands; without it, the same rule-based decomposition runs each time. Exports contain requirement and source text and must remain private. The export path must be new; no model is invoked by export. The encoder still needs separately installed model weights and its optional runtime.
+
+`--embeddings` selects hybrid retrieval; omitting it preserves BM25 behavior. `--window` defaults to 50 (analysis accepts 6-1000), and `--rrf-k` defaults to 60 (1-1000). Six candidates per criterion remain the verification limit. A bundle must contain every exact query and indexed document hash, including documents that ultimately rank poorly. Missing, stale or invalid vectors fail before any criterion is verified; there is no silent sparse fallback. Regenerate inputs when criteria or source text change.
+
+Run provenance includes encoder model/revision/dimensions, the complete bundle fingerprint and fusion parameters. These values participate in run identity so cached results cannot cross retrieval configurations. The engine snapshots vectors before verification. Extra vectors are allowed and included in the fingerprint. Source citations remain validated against the analyzed head revision.
+
+Hybrid retrieval changes candidate selection, not the verdict policy: without `--model`, the verifier still abstains and tests remain unexecuted. `--model` separately opts into sending selected evidence to the configured verifier. API, dashboard and GitHub routes continue to use their existing BM25 default; they do not accept uploaded bundles or server file paths. Automated hybrid-analysis tests use synthetic vectors and do not establish real-model quality.
+
 ### Offline hybrid retrieval experiments
 
-The evaluation CLI can compare both sparse baselines with cosine-similarity retrieval and reciprocal-rank fusion (RRF). Production analysis still uses BM25. Export the exact queries and source documents for an embedding model you run separately:
+The evaluation CLI can compare both sparse baselines with cosine-similarity retrieval and reciprocal-rank fusion (RRF). Analysis defaults to BM25; the local analysis CLI also accepts an explicit hybrid bundle. Export the exact queries and source documents for an embedding model you run separately:
 
 ```sh
 uv run python scripts/evaluate.py --export-inputs .specguard/embedding-inputs.json
@@ -243,7 +261,7 @@ Choose model and fusion parameters using development cases, then evaluate the fr
 
 - GitHub operations have offline contract coverage; live credentials, installation configuration, and end-to-end provider validation are still required. OAuth self-service is not included.
 - The default verifier always abstains. Model-backed verdicts have contract tests but no live-provider evaluation yet.
-- Production retrieval is BM25 with explicit boosts. Offline vector-bundle experiments support dense retrieval and hybrid fusion; a bundled learned encoder, reranking, fine-tuning, and a human-adjudicated benchmark are not included yet. Metric functions are tested; no general retrieval-quality or reviewer-time claims are made.
+- Retrieval defaults to BM25 with explicit boosts; local CLI analysis can opt into a complete hybrid vector bundle. Offline vector-bundle experiments support dense retrieval and hybrid fusion; a bundled learned encoder, reranking, fine-tuning, and a human-adjudicated benchmark are not included yet. Metric functions are tested; no general retrieval-quality or reviewer-time claims are made.
 - Unambiguous relative import paths are resolved. Package exports, aliases, dynamic imports, and runtime call graphs remain unresolved; the neighborhood is a syntactic approximation.
 - Deleted source is absent from the head index, and no negative verdict is inferred from its absence. Oversized repositories can omit useful supporting context.
 - SQLite and PostgreSQL persistence are implemented. Public multi-user authentication, pgvector, deployment, scheduled retention, and operational monitoring remain pending.

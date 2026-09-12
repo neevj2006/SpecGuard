@@ -26,7 +26,7 @@ class BaselineVerifier:
             verdict=Verdict.UNKNOWN,
             evidence=evidence,
             rationale=(
-                "Retrieved source is available for review; lexical similarity cannot establish behavior."
+                "Retrieved source is available for review; retrieval similarity cannot establish behavior."
                 if evidence
                 else "No matching source was retrieved; this does not prove the behavior is absent."
             ),
