@@ -9,10 +9,12 @@ from fastapi.responses import JSONResponse
 from pydantic import Field
 
 from services.analysis.decompose import Decomposition, RuleDecomposer
-from services.analysis.domain import Contract, Criterion
-from services.analysis.engine import analyze
+from services.analysis.domain import Contract
+from services.analysis.engine import analyze, analyze_index
 from services.analysis.model_decompose import ModelDecomposer
 from services.analysis.verifier import ModelVerifier
+from services.api.bundles import BundleStore
+from services.api.hybrid_routes import ChangeInput, HybridSelection, HybridWorkflow, hybrid_router
 from services.api.observability import RequestMetrics, RequestObservability
 from services.api.store import Store
 from services.integrations.github import GitHubError
@@ -24,13 +26,9 @@ class RequirementInput(Contract):
     use_model: bool = False
 
 
-class RunInput(Contract):
-    repository: str = Field(min_length=1, max_length=300)
-    base: str = Field(min_length=1, max_length=200)
-    head: str = Field(default="HEAD", min_length=1, max_length=200)
-    requirement: str = Field(min_length=1, max_length=20000)
-    criteria: list[Criterion] = Field(min_length=1, max_length=50)
+class RunInput(ChangeInput):
     use_model: bool = False
+    hybrid: HybridSelection | None = None
 
 
 class FeedbackInput(Contract):
@@ -73,6 +71,8 @@ def create_app(
         if identifier.strip():
             store.allow_installation(configured_owner, int(identifier))
     app.include_router(github_router(store, authorize, slots, github_client_factory))
+    hybrid_workflow = HybridWorkflow(root, BundleStore(store))
+    app.include_router(hybrid_router(hybrid_workflow, authorize, slots))
 
     @app.exception_handler(GitHubError)
     async def github_error(_request, error):
@@ -143,6 +143,19 @@ def create_app(
                 429, "Analysis capacity reached; retry after an active run finishes"
             )
         try:
+            if body.hybrid is not None:
+                repo, index, hybrid = hybrid_workflow.resolve(owner, body, body.hybrid)
+                run = analyze_index(
+                    index,
+                    repo.name,
+                    str(repo),
+                    body.requirement,
+                    body.criteria,
+                    ModelVerifier() if body.use_model else None,
+                    lambda identifier: store.get(owner, identifier),
+                    hybrid=hybrid,
+                )
+                return store.save(owner, run)
             run = analyze(
                 repo,
                 body.base,

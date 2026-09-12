@@ -9,7 +9,15 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from services.analysis.domain import AnalysisRun
-from services.api.schema import deliveries, feedback, installations, metadata, publications, runs
+from services.api.schema import (
+    deliveries,
+    embedding_bundles,
+    feedback,
+    installations,
+    metadata,
+    publications,
+    runs,
+)
 
 
 class Store:
@@ -110,6 +118,11 @@ class Store:
             raise ValueError("Retention must be at least one day")
         cutoff = (datetime.now(UTC) - timedelta(days=days)).isoformat()
         with self.engine.begin() as db:
+            db.execute(
+                delete(embedding_bundles).where(
+                    embedding_bundles.c.owner == owner, embedding_bundles.c.created_at < cutoff
+                )
+            )
             return db.execute(
                 delete(runs).where(runs.c.owner == owner, runs.c.created_at < cutoff)
             ).rowcount
@@ -117,6 +130,11 @@ class Store:
     def delete_repository(self, owner: str, repository: str) -> int:
         identifiers = [run.id for run in self.list(owner, 100000) if run.repository == repository]
         with self.engine.begin() as db:
+            db.execute(
+                delete(embedding_bundles).where(
+                    embedding_bundles.c.owner == owner, embedding_bundles.c.repository == repository
+                )
+            )
             return db.execute(
                 delete(runs).where(runs.c.owner == owner, runs.c.id.in_(identifiers))
             ).rowcount

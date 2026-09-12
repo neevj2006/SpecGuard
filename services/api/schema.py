@@ -3,6 +3,17 @@
 from sqlalchemy import Column, ForeignKeyConstraint, Integer, MetaData, String, Table, Text
 
 metadata = MetaData()
+embedding_bundles = Table(
+    "embedding_bundles",
+    metadata,
+    Column("owner", String(128), primary_key=True),
+    Column("id", String(64), primary_key=True),
+    Column("repository", String(300), nullable=False),
+    Column("binding", String(64), nullable=False),
+    Column("created_at", String(40), nullable=False),
+    Column("summary", Text, nullable=False),
+    Column("payload", Text, nullable=False),
+)
 runs = Table(
     "runs",
     metadata,

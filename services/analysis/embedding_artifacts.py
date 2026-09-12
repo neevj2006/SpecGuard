@@ -35,6 +35,10 @@ def _finite_float(value: str) -> float:
 def read_json(path: Path):
     with path.open("rb") as source:
         content = source.read(MAX_BYTES + 1)
+    return decode_json(content)
+
+
+def decode_json(content: bytes):
     if len(content) > MAX_BYTES:
         raise ValueError("Embedding artifact exceeds 20 MB")
     try:

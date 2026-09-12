@@ -4,7 +4,9 @@ from uuid import uuid4
 import pytest
 
 from services.analysis.engine import analyze
+from services.api.bundles import BundleStore
 from services.api.store import Store
+from tests.test_bundle_storage import sample_bundle
 
 
 @pytest.mark.skipif(
@@ -23,6 +25,14 @@ def test_postgres_transactions_ownership_and_feedback(repository):
         assert store.save(owner, run).id == run.id
         store.save(owner, run)
         assert len(store.list(owner)) == 1
+        bundles = BundleStore(store)
+        summary = bundles.save(owner, "fixture", "a" * 64, sample_bundle())
+        assert bundles.save(owner, "fixture", "a" * 64, sample_bundle()) == summary
+        assert bundles.get(owner, summary["id"])[1] == sample_bundle()
+        with pytest.raises(KeyError):
+            bundles.get("not-the-owner", summary["id"])
+        bundles.delete(owner, summary["id"])
+        assert bundles.list(owner) == []
         store.feedback(owner, run.id, run.results[0].criterion.id, "Checked")
         assert store.notes(owner, run.id)[run.results[0].criterion.id] == "Checked"
         with pytest.raises(KeyError):
@@ -30,6 +40,7 @@ def test_postgres_transactions_ownership_and_feedback(repository):
         store.delete(owner, run.id)
         assert store.list(owner) == []
     finally:
+        store.delete_repository(owner, "fixture")
         if store.list(owner):
             store.delete(owner, run.id)
         store.engine.dispose()

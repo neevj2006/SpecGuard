@@ -202,7 +202,43 @@ Use the same resolved commits and edited criteria for export and analysis. `--cr
 
 Run provenance includes encoder model/revision/dimensions, the complete bundle fingerprint and fusion parameters. These values participate in run identity so cached results cannot cross retrieval configurations. The engine snapshots vectors before verification. Extra vectors are allowed and included in the fingerprint. Source citations remain validated against the analyzed head revision.
 
-Hybrid retrieval changes candidate selection, not the verdict policy: without `--model`, the verifier still abstains and tests remain unexecuted. `--model` separately opts into sending selected evidence to the configured verifier. API, dashboard and GitHub routes continue to use their existing BM25 default; they do not accept uploaded bundles or server file paths. Automated hybrid-analysis tests use synthetic vectors and do not establish real-model quality.
+Hybrid retrieval changes candidate selection, not the verdict policy: without `--model`, the verifier still abstains and tests remain unexecuted. `--model` separately opts into sending selected evidence to the configured verifier. The API also supports owner-scoped registered bundles as described below; dashboard and GitHub flows still default to BM25. No route accepts a server path to a vector file. Automated hybrid-analysis tests use synthetic vectors and do not establish real-model quality.
+
+### Registered hybrid bundles in the API
+
+The authenticated local-repository API can register vectors for a specific change and reuse them across restarts. Apply `uv run alembic upgrade head` to a migration-managed database before starting the updated service. SQLite and PostgreSQL are supported.
+
+1. Send `POST /v1/embedding-inputs` with `repository`, `base`, `head`, `requirement` and reviewed `criteria`, using the same change fields as a run request. The repository is resolved under the configured repository root. This endpoint returns resolved commits, a `binding_sha256` and `inputs` keyed by exact text hashes; it does not persist source exports or run an encoder.
+2. Save the `inputs` object locally and encode it using `scripts/embed_inputs.py`. Keep the export private: it contains requirement and source text. Use the resolved commit SHAs for subsequent requests.
+3. Send `POST /v1/embedding-bundles` with `Content-Type: application/json` and the following structure. `change` contains exactly the fields from step 1; omit run-only fields such as `use_model` and `hybrid`.
+
+```json
+{
+  "change": {
+    "repository": ".",
+    "base": "BASE_SHA",
+    "head": "HEAD_SHA",
+    "requirement": "Archive receipts",
+    "criteria": [{"id": "receipt", "text": "Archive receipts", "source_text": "Archive receipts"}]
+  },
+  "binding_sha256": "HASH_FROM_INPUT_EXPORT",
+  "bundle": {"model": "YOUR_MODEL", "revision": "ENCODER_REVISION", "dimensions": 2,
+             "vectors": {"EXACT_INPUT_SHA256": [1.0, 0.0]}}
+}
+```
+
+This is a structural example, not an executable vector bundle. Supply every exported hash exactly once with its actual vector; extra and missing vectors are rejected. The whole upload is limited to 20 MB, including change metadata. Duplicate JSON keys and non-finite numbers are rejected. Registration re-indexes the change and checks the binding before storing vectors; if a branch moved or criteria changed, export and encode again. A valid request returns HTTP 201 with bundle metadata and its `id`. Repeated identical registration is idempotent and preserves the original timestamp.
+
+4. Send the usual `POST /v1/runs` body with `"hybrid": {"bundle_id": "REGISTERED_ID", "window": 50, "rrf_k": 60}`. Omit `hybrid` for BM25. Selection checks ownership and the complete change binding before creating a model verifier or consulting cached runs. A stale binding returns 409; an unavailable or other-owner bundle returns 404. `use_model` remains an independent opt-in and defaults to false. Uploading vectors never authorizes a provider call.
+
+The binding covers the resolved repository location, both commits, parser version, requirement, reviewed criteria and input hashes. Bundle identity additionally covers all vectors and encoder metadata. The API stores vectors and metadata in `embedding_bundles`, not plaintext input exports. Vectors may still encode sensitive information; protect the database and its backups. Registered bundles cannot be reused across different changes, even if some input texts overlap.
+
+- `GET /v1/embedding-bundles?limit=100&offset=0` lists only the caller's metadata, without vectors or source text.
+- `GET /v1/embedding-bundles/{id}/export` returns the caller's metadata and vector bundle. Both input and bundle exports specify `Cache-Control: no-store`.
+- `DELETE /v1/embedding-bundles/{id}` removes that owner's stored vectors. Existing analysis reports remain available and can contain cited source; delete those runs separately when retiring source data. A run that already loaded a vector snapshot can finish after deletion. Future requests cannot select the deleted bundle, including for cached runs.
+- The existing `DELETE /v1/retention?days=N` also removes bundles older than the cutoff; its `deleted_runs` response still counts runs only. Repository deletion also removes that owner's associated bundles. These operations do not erase independently downloaded exports or database backups, and retention is not scheduled automatically.
+
+Embedding export, registration and analysis share the existing two-slot process-local capacity limit. Registrations return 413 for oversized uploads, 415 for unsupported content types, 422 for invalid inputs and 429 when capacity is occupied. There is no per-owner storage quota or distributed queue yet; deploy only within the existing trusted-owner API model. The dashboard has no bundle-management controls yet, and GitHub analysis does not select registered local bundles. Tests use synthetic vectors; real-model quality validation remains outstanding.
 
 ### Offline hybrid retrieval experiments
 
