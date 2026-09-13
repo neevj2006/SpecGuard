@@ -206,6 +206,20 @@ Hybrid retrieval changes candidate selection, not the verdict policy: without `-
 
 ### Registered hybrid bundles in the API
 
+For a staged client workflow, set `SPECGUARD_API_URL` and `SPECGUARD_API_TOKEN` in your shell, then use:
+
+```sh
+uv run python scripts/hybrid_review.py prepare change.json /private/review-workspace
+uv run --with sentence-transformers python scripts/hybrid_review.py encode /private/review-workspace --model-dir /path/to/model --model your-model
+uv run python scripts/hybrid_review.py analyze /private/review-workspace
+```
+
+`change.json` contains the reviewed API change fields shown below. Preparation pins the server's resolved commits and writes exact inputs plus a fingerprinted manifest. Encoding is local, uses the existing optional encoder runtime, and checkpoints completed batches. Analysis registers the vectors and writes `run.json`; add `--use-model` only to explicitly enable the configured server verifier. Fusion parameters are available as `--window` and `--rrf-k`. Standard output contains stage summaries and identifiers, not source text or credentials.
+
+The API defaults to `http://127.0.0.1:8000`; other hosts require HTTPS. Supply only an origin, with no URL credentials, path, query or fragment. The client does not follow redirects, use environment proxies, or retry failed requests automatically. Request and response bodies are bounded to 20 MB. Verify the configured server before sending your reviewed requirement to it.
+
+Use a new private workspace for each change or model experiment. Credentials are never written to the workspace, but inputs and completed runs contain source. The manifest binds the API origin and detects accidental input changes; it is not a signed artifact or a defense against malicious local edits. An interrupted prepare may leave an incomplete directory; prepare again into a new directory. An interrupted encode can resume with its valid cache. A finished vector bundle and completed run are never overwritten. After a network or publication failure, inspect API history before retrying: the server may already have registered vectors or completed analysis. Repeated identical registration and completed-run lookup use the server's existing idempotency behavior. No model weights are downloaded by this workflow, and the automated end-to-end test uses synthetic vectors.
+
 The authenticated local-repository API can register vectors for a specific change and reuse them across restarts. Apply `uv run alembic upgrade head` to a migration-managed database before starting the updated service. SQLite and PostgreSQL are supported.
 
 1. Send `POST /v1/embedding-inputs` with `repository`, `base`, `head`, `requirement` and reviewed `criteria`, using the same change fields as a run request. The repository is resolved under the configured repository root. This endpoint returns resolved commits, a `binding_sha256` and `inputs` keyed by exact text hashes; it does not persist source exports or run an encoder.
