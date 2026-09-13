@@ -118,6 +118,12 @@ def main():
                 )
             if item.uncertainty:
                 print(f"Uncertainty: {item.uncertainty}")
+            if item.verification_usage:
+                usage = item.verification_usage
+                tokens = usage.total_tokens if usage.total_tokens is not None else "unknown"
+                print(
+                    f"Verification: {usage.status} | Attempted: {usage.request_attempted} | Tokens: {tokens} | {usage.elapsed_ms} ms"
+                )
     except (ValueError, TypeError, OSError) as error:
         parser.exit(2, f"specguard: {error}\n")
 

@@ -79,6 +79,32 @@ class TestExecution(Contract):
         return self
 
 
+class VerificationUsage(Contract):
+    requested_model: str = Field(min_length=1, max_length=200)
+    request_attempted: bool
+    elapsed_ms: int = Field(ge=0)
+    total_tokens: int | None = Field(default=None, ge=0)
+    status: str = Field(
+        pattern="^(accepted|no_evidence|secret_withheld|input_budget|request_budget|time_budget|provider_error|invalid_response|response_budget)$"
+    )
+
+    @model_validator(mode="after")
+    def consistent_attempt(self):
+        if not self.request_attempted and self.total_tokens is not None:
+            raise ValueError("Unattempted verification cannot report provider tokens")
+        if (
+            self.status in ("accepted", "provider_error", "invalid_response", "response_budget")
+            and not self.request_attempted
+        ):
+            raise ValueError("Provider outcomes require an attempted request")
+        if (
+            self.status in ("no_evidence", "secret_withheld", "input_budget", "request_budget")
+            and self.request_attempted
+        ):
+            raise ValueError("Preflight outcomes cannot report attempted requests")
+        return self
+
+
 class CriterionResult(Contract):
     criterion: Criterion
     verdict: Verdict
@@ -88,6 +114,7 @@ class CriterionResult(Contract):
     uncertainty: str = ""
     suggestion: str = ""
     tests: TestExecution = Field(default_factory=TestExecution)
+    verification_usage: VerificationUsage | None = None
 
     @model_validator(mode="after")
     def grounded_claim(self):

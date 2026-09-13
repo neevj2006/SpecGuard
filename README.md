@@ -186,6 +186,24 @@ Both reviews must cover exactly the same runs, criteria, evidence, repository gr
 
 The template binds both input files with fingerprints and leaves every final verdict and adjudicator identifier blank, including cases where reviewers agree. Fill every decision, choose `synthetic` or `human_adjudicated` annotation status, and add explicit citation judgments where reviewed; omitted judgments remain unknown. The apply command rejects stale inputs, missing/duplicate decisions, changed provenance, or promotion of synthetic inputs to human adjudication. The final manifest is directly accepted by the verdict evaluator. Input files are limited to 20 MB each and output files must be new, so existing review work is not overwritten.
 
+### Model verification limits and telemetry
+
+Model verification remains explicit (`--model` in the local CLI, `use_model: true` in API requests). A verifier instance now accepts these environment settings, validated before any provider request:
+
+| Setting | Default | Allowed range |
+| --- | --- | --- |
+| `SPECGUARD_VERIFIER_MAX_REQUESTS` | 10 | 1-50 |
+| `SPECGUARD_VERIFIER_SECONDS` | 45 | 1-300 |
+| `SPECGUARD_VERIFIER_OUTPUT_TOKENS` | 1500 | 100-3000 |
+
+The request limit counts attempted requests, including failures, and there are no automatic retries. Empty evidence, detected secrets and oversized evidence packets do not consume requests. Remaining criteria abstain when the request allowance or time budget is exhausted. Limits are included in verifier provenance and run identity, preventing cached analyses from crossing configurations. Decomposition has its separate existing request path and is not controlled by these verifier settings.
+
+The verifier deadline starts at instance creation. It prevents starting requests after expiry, restricts the network timeout to the remaining allowance, and checks time between response chunks. This is a cooperative deadline, not hard process cancellation: an in-progress blocking network operation can finish after it. The analysis engine also retains its 45-second criterion-dispatch budget; increasing the verifier setting does not extend that engine budget. Output tokens are a per-request completion cap, not a total token or dollar budget; input tokens and provider billing still apply.
+
+Each model-selected criterion can include `verification_usage`: requested model, request-attempted flag, elapsed milliseconds, provider-reported total tokens or `null`, and outcome status. Statuses distinguish `accepted`, `no_evidence`, `secret_withheld`, `input_budget`, `request_budget`, `time_budget`, `provider_error`, `invalid_response`, and `response_budget`. An accepted response means it passed the response and citation contract; it does not certify correctness or test execution. A time-budget outcome can occur before a request or while reading a response; inspect the attempted flag. Old saved results and ordinary offline baseline results have no telemetry.
+
+Incomplete outputs, duplicate citations and ambiguous JSON are rejected with abstention. Known provider usage is retained even if the claim is invalid. An attempted request with missing usage makes the run-level token total unknown; per-criterion known values remain available. Failed requests may still be billable. JSON API/CLI exports and persistence retain this telemetry, and the text CLI displays it separately from verdict and test status. Dashboard presentation is unchanged.
+
 ### Hybrid retrieval for local analysis
 
 Hybrid retrieval is opt-in for committed local changes. First review your criteria, then export the exact texts used by the analysis engine, encode them with a trusted local model, and supply the resulting bundle:

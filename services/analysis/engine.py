@@ -3,7 +3,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from services.analysis.analysis_retrieval import prepare_hybrid, review_criteria
-from services.analysis.domain import AnalysisRun, Criterion, stable_id
+from services.analysis.domain import AnalysisRun, Criterion, VerificationUsage, stable_id
 from services.analysis.graph import neighbors
 from services.analysis.hybrid import HybridRetriever
 from services.analysis.repository import index_change, validate_citation
@@ -83,6 +83,13 @@ def analyze_index(
             result.uncertainty = (
                 "Run time budget reached; this criterion was not sent to the verifier."
             )
+            if getattr(verifier, "model", None):
+                result.verification_usage = VerificationUsage(
+                    requested_model=getattr(verifier, "model", ""),
+                    request_attempted=False,
+                    elapsed_ms=0,
+                    status="time_budget",
+                )
         else:
             result = verifier.verify(criterion, candidates)
         candidate_ids = {e.id for e in candidates}
