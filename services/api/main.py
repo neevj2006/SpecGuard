@@ -12,6 +12,7 @@ from services.analysis.decompose import Decomposition, RuleDecomposer
 from services.analysis.domain import Contract
 from services.analysis.engine import analyze, analyze_index
 from services.analysis.model_decompose import ModelDecomposer
+from services.analysis.usage_report import summarize_usage
 from services.analysis.verifier import ModelVerifier
 from services.api.bundles import BundleStore
 from services.api.hybrid_routes import ChangeInput, HybridSelection, HybridWorkflow, hybrid_router
@@ -89,6 +90,20 @@ def create_app(
     @app.get("/v1/metrics")
     def metrics(owner: str = Depends(authorize)):
         return request_metrics.snapshot()
+
+    @app.get("/v1/usage")
+    def usage(
+        limit: int = Query(default=100, ge=1, le=100),
+        owner: str = Depends(authorize),
+    ):
+        recent = store.list(owner, limit + 1)
+        report = summarize_usage(recent[:limit])
+        report["selection"] = {
+            "order": "created_at_desc_id_asc",
+            "limit": limit,
+            "has_more": len(recent) > limit,
+        }
+        return JSONResponse(report, headers={"Cache-Control": "no-store"})
 
     @app.get("/v1/readiness")
     def readiness(owner: str = Depends(authorize)):

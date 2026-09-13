@@ -186,6 +186,22 @@ Both reviews must cover exactly the same runs, criteria, evidence, repository gr
 
 The template binds both input files with fingerprints and leaves every final verdict and adjudicator identifier blank, including cases where reviewers agree. Fill every decision, choose `synthetic` or `human_adjudicated` annotation status, and add explicit citation judgments where reviewed; omitted judgments remain unknown. The apply command rejects stale inputs, missing/duplicate decisions, changed provenance, or promotion of synthetic inputs to human adjudication. The final manifest is directly accepted by the verdict evaluator. Input files are limited to 20 MB each and output files must be new, so existing review work is not overwritten.
 
+### Operational usage reports
+
+Authenticated `GET /v1/usage?limit=100` summarizes the owner's newest persisted analyses (1–100 runs). The response includes criterion verdict/test counts, verification outcomes, budget stops, attempted-request and run latency distributions, and known/unknown token and recorded-cost totals. `selection.has_more` identifies a truncated history; timestamps describe the selected records. Responses use `Cache-Control: no-store`, and deletion or retention immediately removes records from subsequent summaries.
+
+For an offline report across up to 1,000 saved runs, use plain analysis JSON or the API's `{run, feedback}` export envelope:
+
+```bash
+uv run python -m scripts.report_usage ../private/run-one.json ../private/run-two.json --output ../private/usage.json
+```
+
+Omit `--output` to print JSON. Existing output files are preserved. Inputs have a combined 20 MB limit; duplicate run IDs, invalid exports and ambiguous timestamps are rejected. The report omits repository names, revisions, requirement text, evidence, reviewer notes and model identifiers.
+
+Missing telemetry remains uninstrumented, and missing provider usage remains unknown. Known subtotals are retained even when complete totals cannot be calculated. Run-level usage is separate from criterion-request usage; do not add them together. Costs are decimal strings from saved run records, with no inferred pricing. Latency percentiles use nearest rank and exclude skipped requests from provider-request samples.
+
+These reports describe saved analyses, not current spend: failed/unrecorded runs, decomposition and cache-hit requests are outside their scope. Older records can lack criterion telemetry. Accepted model responses indicate contract validation, not correctness; test counts describe criterion records rather than unique executions. No live provider call is made by reporting.
+
 ### Model verification limits and telemetry
 
 Model verification remains explicit (`--model` in the local CLI, `use_model: true` in API requests). A verifier instance now accepts these environment settings, validated before any provider request:
