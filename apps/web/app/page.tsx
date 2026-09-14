@@ -17,7 +17,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { exampleRun } from "@/lib/example";
-import type { Criterion, Run, Verdict } from "@/lib/types";
+import type { Criterion, Run, UsageReport, Verdict } from "@/lib/types";
 import {
   ArrowDownToLine,
   ArrowLeft,
@@ -35,6 +35,10 @@ import {
   Settings2,
   ShieldCheck,
   SlidersHorizontal,
+  Activity,
+  Gauge,
+  Timer,
+  CircleDashed,
 } from "lucide-react";
 import { useState } from "react";
 
@@ -44,7 +48,7 @@ const labels: Record<Verdict, string> = {
   not_satisfied: "Not satisfied",
   not_verifiable: "Not verifiable",
 };
-type View = "review" | "new" | "history" | "repositories" | "settings";
+type View = "review" | "new" | "history" | "repositories" | "usage" | "settings";
 function download(run: Run, feedback: Record<string, string> = {}) {
   const url = URL.createObjectURL(
     new Blob([JSON.stringify({ run, feedback }, null, 2)], {
@@ -69,6 +73,8 @@ export default function Dashboard() {
   const [notice, setNotice] = useState("");
   const [history, setHistory] = useState<Run[]>([]);
   const [historyLoaded, setHistoryLoaded] = useState(false);
+  const [usage, setUsage] = useState<UsageReport | null>(null);
+  const [usageLoaded, setUsageLoaded] = useState(false);
   const [repositories, setRepositories] = useState<
     { name: string; path: string }[]
   >([]);
@@ -174,7 +180,8 @@ export default function Dashboard() {
             [
               { id: "review", label: "Review desk", icon: GitPullRequest },
               { id: "repositories", label: "Repositories", icon: FolderGit2 },
-              { id: "history", label: "Run history", icon: History },
+                  { id: "history", label: "Run history", icon: History },
+              { id: "usage", label: "Usage", icon: Activity },
             ] as const
           ).map((n) => (
             <Button
@@ -237,6 +244,7 @@ export default function Dashboard() {
                   history: "Run history",
                   repositories: "Repositories",
                   settings: "Settings",
+                  usage: "Usage",
                 }[view]
               }
             </span>
@@ -694,6 +702,83 @@ export default function Dashboard() {
             </p>
           </section>
         )}
+        {view === "usage" && (
+          <section className="page-content usage-page">
+            <div className="eyebrow">OPERATIONS</div>
+            <div className="heading-row">
+              <div>
+                <h1>Usage you can explain.</h1>
+                <p>Review saved analysis activity without exposing source or reviewer content.</p>
+              </div>
+              <Button
+                variant="outline"
+                disabled={busy}
+                onClick={() => perform(async () => {
+                  setUsage(await api<UsageReport>("usage?limit=100"));
+                  setUsageLoaded(true);
+                })}
+              >
+                <Activity size={15} />
+                {usageLoaded ? "Refresh usage" : "Load usage"}
+              </Button>
+            </div>
+            {!usageLoaded ? (
+              <div className="usage-empty">
+                <Gauge size={30} />
+                <strong>Nothing loaded yet</strong>
+                <p>Load the latest saved analyses to see request outcomes, latency, and recorded totals.</p>
+                <Button onClick={() => perform(async () => {
+                  setUsage(await api<UsageReport>("usage?limit=100"));
+                  setUsageLoaded(true);
+                })}>Load usage</Button>
+              </div>
+            ) : usage && (
+              <>
+                <div className="usage-banner">
+                  <CircleDashed size={16} />
+                  <span>Unknown values stay unknown. These figures describe saved records, not a provider invoice.</span>
+                  {usage.selection?.has_more && <strong>Showing the newest {usage.selection.limit} runs.</strong>}
+                </div>
+                <div className="usage-grid">
+                  <article className="usage-card usage-card-accent">
+                    <span className="usage-card-label">Saved runs</span>
+                    <strong>{usage.runs}</strong>
+                    <small>{usage.criteria.total} criterion records</small>
+                  </article>
+                  <article className="usage-card">
+                    <span className="usage-card-label">Requests attempted</span>
+                    <strong>{usage.verification.attempted_requests}</strong>
+                    <small>{usage.verification.skipped_requests} preflight skips</small>
+                  </article>
+                  <article className="usage-card">
+                    <span className="usage-card-label">Budget stops</span>
+                    <strong>{usage.verification.budget_outcomes}</strong>
+                    <small>request, time, input, or response</small>
+                  </article>
+                  <article className="usage-card">
+                    <span className="usage-card-label">Known request tokens</span>
+                    <strong>{usage.verification.total_tokens ?? "Unknown"}</strong>
+                    <small>{usage.verification.requests_with_unknown_tokens ? `${usage.verification.requests_with_unknown_tokens} requests missing token data` : "Complete for instrumented requests"}</small>
+                  </article>
+                </div>
+                <div className="usage-columns">
+                  <section className="usage-section">
+                    <div className="usage-section-heading"><div><span className="eyebrow">VERIFICATION</span><h2>Request outcomes</h2></div><Activity size={18} /></div>
+                    <div className="usage-list">
+                      {Object.entries(usage.verification.outcomes).map(([label, count]) => <div className="usage-row" key={label}><span>{label.replaceAll("_", " ")}</span><strong>{count}</strong></div>)}
+                    </div>
+                  </section>
+                  <section className="usage-section">
+                    <div className="usage-section-heading"><div><span className="eyebrow">LATENCY</span><h2>Time in review</h2></div><Timer size={18} /></div>
+                    <div className="usage-metrics"><div><span>Request p50</span><strong>{usage.verification.request_latency.p50_ms == null ? "Unknown" : `${usage.verification.request_latency.p50_ms} ms`}</strong></div><div><span>Request p95</span><strong>{usage.verification.request_latency.p95_ms == null ? "Unknown" : `${usage.verification.request_latency.p95_ms} ms`}</strong></div><div><span>Run average</span><strong>{usage.run_latency.mean_ms == null ? "Unknown" : `${usage.run_latency.mean_ms} ms`}</strong></div></div>
+                    <p className="usage-help">Skipped criteria do not enter request latency. Run latency includes the complete saved analysis.</p>
+                  </section>
+                </div>
+                <div className="usage-footnote"><strong>Data boundary</strong><span>Reports are owner-scoped and uncached. Deleting a run or applying retention removes it from the next report.</span></div>
+              </>
+            )}
+          </section>
+        )}
         {view === "repositories" && (
           <section className="page-content">
             <div className="eyebrow">SOURCE WORKSPACES</div>
@@ -840,6 +925,7 @@ export default function Dashboard() {
             { id: "new", label: "Analyze", icon: Plus },
             { id: "repositories", label: "Repos", icon: FolderGit2 },
             { id: "history", label: "History", icon: History },
+            { id: "usage", label: "Usage", icon: Activity },
             { id: "settings", label: "Settings", icon: Settings2 },
           ] as const
         ).map((item) => (
